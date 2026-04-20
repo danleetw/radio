@@ -584,7 +584,14 @@ function runCalc() {
       <div class="rrow"><span class="rl">有效 / 忽略</span><span class="rv">${incl} / ${removed.size} 個站台</span></div>
       <div class="rrow"><span class="rl">頻率</span><span class="rv">${freq} MHz</span></div>
     `;
-    map.fitBounds(L.latLngBounds([[res.lat,res.lon],...valid.map(s=>[s.lat,s.lon])]).pad(0.2));
+    // 以誤差圓為基準縮放：圓直徑約佔地圖 1/2
+    const dispKm = Math.max(res.errKm, 10);
+    const dLat = dispKm / 111;
+    const dLon = dispKm / (111 * Math.cos(res.lat * Math.PI / 180));
+    map.fitBounds(
+      L.latLngBounds([res.lat - dLat, res.lon - dLon], [res.lat + dLat, res.lon + dLon])
+      .pad(1.0)
+    );
   } else {
     clearTxLayers();
     document.getElementById('res-body').innerHTML=
