@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>天線線長計算器</title>
+    <style>
+        :root {
+            --primary: #1E88E5;
+            --primary-dark: #1565C0;
+            --background: #F5F5F5;
+            --card-bg: #FFFFFF;
+            --text: #212121;
+            --text-secondary: #757575;
+            --error: #D32F2F;
+            --success: #388E3C;
+            --border: #E0E0E0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 16px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+        }
+
+        @media (min-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            margin-bottom: 16px;
+            color: var(--text);
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .form-group select,
+        .form-group input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .form-group select:focus,
+        .form-group input[type="number"]:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .form-group input.error {
+            border-color: var(--error);
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: normal;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--primary);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px 24px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: var(--text-secondary);
+            margin-top: 16px;
+        }
+
+        .btn-secondary:hover {
+            background: #616161;
+        }
+
+        .error-message {
+            color: var(--error);
+            font-size: 0.875rem;
+            margin-top: 4px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .result-card {
+            background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .result-card h3 {
+            color: var(--primary);
+            margin-bottom: 12px;
+        }
+
+        .result-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary-dark);
+        }
+
+        .result-detail {
+            color: var(--text-secondary);
+            margin-top: 8px;
+            font-size: 0.9rem;
+        }
+
+        .history-list {
+            list-style: none;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .history-item:hover {
+            background-color: #F5F5F5;
+        }
+
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        .history-frequency {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .history-result {
+            color: var(--text);
+            font-size: 0.95rem;
+        }
+
+        .history-meta {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-secondary);
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📡 天線線長計算器</h1>
+        </header>
+
+        <div class="main-content">
+            <!-- 輸入區塊 -->
+            <div class="card">
+                <h2 class="card-title">輸入參數</h2>
+                <form id="calculator-form">
+                    <div class="form-group">
+                        <label for="antenna-type">天線類型：</label>
+                        <select id="antenna-type">
+                            <option value="">請選擇天線類型</option>
+                            <option value="dipole">半波長 Dipole (λ/2)</option>
+                            <option value="gp">四分之一波長 GP (λ/4)</option>
+                            <option value="fullwave">全波長 (λ)</option>
+                            <option value="3lambda4">三波長 (3λ/4)</option>
+                        </select>
+                        <div class="error-message" id="antenna-type-error">請選擇天線類型</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="frequency">頻率 (MHz)：</label>
+                        <input type="number" id="frequency" placeholder="例如：14.230" step="0.001" min="1.8" max="3000">
+                        <div class="error-message" id="frequency-error">頻率需在 1.8~3000 MHz 之間</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="velocity-factor">縮短因子 (Velocity Factor)：</label>
+                        <input type="number" id="velocity-factor" value="0.8" step="0.01" min="0.1" max="1.0">
+                        <div class="error-message" id="velocity-factor-error">縮短因子需在 0.1~1.0 之間</div>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <label>
+                                <input type="checkbox" id="unit-metric" checked>
+                                公制 (公尺/公分)
+                            </label>
+                            <label>
+                                <input type="checkbox" id="unit-imperial">
+                                英制 (英呎/英吋)
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn">開始計算</button>
+                </form>
+            </div>
+
+            <!-- 結果區塊 -->
+            <div class="card">
+                <h2 class="card-title">計算結果</h2>
+                <div id="result-container" class="hidden">
+                    <div class="result-card">
+                        <h3>線長</h3>
+                        <div class="result-value" id="result-length">--</div>
+                        <div class="result-detail" id="result-formula">--</div>
+                    </div>
+                    <div class="result-card">
+                        <h3>波長</h3>
+                        <div class="result-value" id="result-wavelength">--</div>
+                    </div>
+                </div>
+                <div id="result-empty" class="empty-state">
+                    請輸入參數並點擊計算
+                </div>
+            </div>
+
+            <!-- 歷史記錄區塊 -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2 class="card-title">計算歷史</h2>
+                <ul id="history-list" class="history-list">
+                    <li class="empty-state">尚無計算記錄</li>
+                </ul>
+                <button type="button" id="clear-history" class="btn btn-secondary">清除歷史</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // 天線計算核心模組
+        // ============================================
+        const AntennaCalculator = {
+            // 天線類型對應的波長倍數
+            ANTENNA_TYPES: {
+                'dipole': { name: '半波長 Dipole (λ/2)', multiplier: 0.5 },
+                'gp': { name: '四分之一波長 GP (λ/4)', multiplier: 0.25 },
+                'fullwave': { name: '全波長 (λ)', multiplier: 1.0 },
+                '3lambda4': { name: '三波長 (3λ/4)', multiplier: 0.75 }
+            },
+
+            // 計算天線線長
+            calculate: function(frequencyMHz, antennaType, velocityFactor) {
+                const type = this.ANTENNA_TYPES[antennaType];
+                if (!type) return null;
+
+                // 波長 (公尺) = 300 / 頻率(MHz)
+                const wavelength = 300 / frequencyMHz;
+
+                // 天線線長 = 波長 × 倍數 × 縮短因子
+                const length = wavelength * type.multiplier * velocityFactor;
+
+                return {
+                    wavelength: wavelength,
+                    length: length,
+                    lengthInFeet: length * 3.28084,
+                    formula: `λ/${(1/type.multiplier).toFixed(0)} × ${velocityFactor}`,
+                    antennaTypeName: type.name,
+                    multiplier: type.multiplier
+                };
+            }
+        };
+
+        // ============================================
+        // 輸入驗證模組
+        // ============================================
+        const InputValidator = {
+            // 頻率範圍: 1.8 ~ 3000 MHz
+            FREQ_MIN: 1.8,
+            FREQ_MAX: 3000,
+
+            // 縮短因子範圍: 0.1 ~ 1.0
+            VF_MIN: 0.1,
+            VF_MAX: 1.0,
+
+            validateFrequency: function(value) {
+                const freq = parseFloat(value);
+                if (isNaN(freq)) return { valid: false, message: '請輸入頻率' };
+                if (freq < this.FREQ_MIN || freq > this.FREQ_MAX) {
+                    return { valid: false, message: `頻率需在 ${this.FREQ_MIN}~${this.FREQ_MAX} MHz 之間` };
+                }
+                return { valid: true };
+            },
+
+            validateVelocityFactor: function(value) {
+                const vf = parseFloat(value);
+                if (isNaN(vf)) return { valid: false, message: '請輸入縮短因子' };
+                if (vf < this.VF_MIN || vf > this.VF_MAX) {
+                    return { valid: false, message: `縮短因子需在 ${this.VF_MIN}~${this.VF_MAX} 之間` };
+                }
+                return { valid: true };
+            },
+
+            validateAntennaType: function(value) {
+                if (!value || value === '') {
+                    return { valid: false, message: '請選擇天線類型' };
+                }
+                return { valid: true };
+            }
+        };
+
+        // ============================================
+        // 歷史記錄管理模組
+        // ============================================
+        const HistoryManager = {
+            STORAGE_KEY: 'antenna_calculator_history',
+
+            // 儲存計算結果
+            save: function(data) {
+                const history = this.load();
+                history.unshift(data); // 加入最新記錄
+                // 最多保留 50 筆記錄
+                if (history.length > 50) {
+                    history.pop();
+                }
+                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(history));
+            },
+
+            // 讀取歷史記錄
+            load: function() {
+                const data = localStorage.getItem(this.STORAGE_KEY);
+                return data ? JSON.parse(data) : [];
+            },
+
+            // 清除所有歷史記錄
+            clear: function() {
+                localStorage.removeItem(this.STORAGE_KEY);
+            }
+        };
+
+        // ============================================
+        // UI 控制模組
+        // ============================================
+        const UIController = {
+            elements: {},
+
+            init: function() {
+                // 快取 DOM 元素
+                this.elements = {
+                    form: document.getElementById('calculator-form'),
+                    antennaType: document.getElementById('antenna-type'),
+                    frequency: document.getElementById('frequency'),
+                    velocityFactor: document.getElementById('velocity-factor'),
+                    unitMetric: document.getElementById('unit-metric'),
+                    unitImperial: document.getElementById('unit-imperial'),
+                    resultContainer: document.getElementById('result-container'),
+                    resultEmpty: document.getElementById('result-empty'),
+                    resultLength: document.getElementById('result-length'),
+                    resultFormula: document.getElementById('result-formula'),
+                    resultWavelength: document.getElementById('result-wavelength'),
+                    historyList: document.getElementById('history-list'),
+                    clearHistory: document.getElementById('clear-history')
+                };
+
+                // 綁定事件
+                this.bindEvents();
+                
+                // 渲染歷史記錄
+                this.renderHistory();
+            },
+
+            bindEvents: function() {
+                const self = this;
+
+                // 表單提交
+                this.elements.form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    self.handleCalculate();
+                });
+
+                // 單位Checkbox互斥
+                this.elements.unitMetric.addEventListener('change', function() {
+                    if (self.elements.unitMetric.checked) {
+                        self.elements.unitImperial.checked = false;
+                    }
+                });
+
+                this.elements.unitImperial.addEventListener('change', function() {
+                    if (self.elements.unitImperial.checked) {
+                        self.elements.unitMetric.checked = false;
+                    }
+                });
+
+                // 清除歷史
+                this.elements.clearHistory.addEventListener('click', function() {
+                    if (confirm('確定要清除所有計算歷史嗎？')) {
+                        HistoryManager.clear();
+                        self.renderHistory();
+                        self.clearResult();
+                    }
+                });
+
+                // 即時驗證
+                this.elements.frequency.addEventListener('input', function() {
+                    self.clearError('frequency');
+                });
+
+                this.elements.velocityFactor.addEventListener('input', function() {
+                    self.clearError('velocity-factor');
+                });
+
+                this.elements.antennaType.addEventListener('change', function() {
+                    self.clearError('antenna-type');
+                });
+            },
+
+            handleCalculate: function() {
+                const antennaType = this.elements.antennaType.value;
+                const frequency = this.elements.frequency.value;
+                const velocityFactor = this.elements.velocityFactor.value;
+                const isMetric = this.elements.unitMetric.checked;
+
+                // 清除舊錯誤
+                this.clearAllErrors();
+
+                // 驗證輸入
+                const antennaTypeValidation = InputValidator.validateAntennaType(antennaType);
+                const frequencyValidation = InputValidator.validateFrequency(frequency);
+                const vfValidation = InputValidator.validateVelocityFactor(velocityFactor);
+
+                if (!antennaTypeValidation.valid) {
+                    this.showError('antenna-type', antennaTypeValidation.message);
+                    return;
+                }
+
+                if (!frequencyValidation.valid) {
+                    this.showError('frequency', frequencyValidation.message);
+                    return;
+                }
+
+                if (!vfValidation.valid) {
+                    this.showError('velocity-factor', vfValidation.message);
+                    return;
+                }
+
+                // 執行計算
+                const result = AntennaCalculator.calculate(
+                    parseFloat(frequency),
+                    antennaType,
+                    parseFloat(velocityFactor)
+                );
+
+                if (result) {
+                    // 顯示結果
+                    this.renderResult(result, isMetric);
+
+                    // 儲存歷史
+                    const historyItem = {
+                        id: Date.now().toString(),
+                        timestamp: new Date().toISOString(),
+                        frequency: parseFloat(frequency),
+                        antennaType: antennaType,
+                        velocityFactor: parseFloat(velocityFactor),
+                        unit: isMetric ? 'metric' : 'imperial',
+                        result: result
+                    };
+                    HistoryManager.save(historyItem);
+                    this.renderHistory();
+                }
+            },
+
+            renderResult: function(result, isMetric) {
+                this.elements.resultEmpty.classList.add('hidden');
+                this.elements.resultContainer.classList.remove('hidden');
+
+                let lengthText, unitText;
+                if (isMetric) {
+                    if (result.length >= 1) {
+                        lengthText = result.length.toFixed(2) + ' 公尺';
+                    } else {
+                        lengthText = (result.length * 100).toFixed(1) + ' 公分';
+                    }
+                    unitText = '公尺';
+                } else {
+                    if (result.lengthInFeet >= 1) {
+                        lengthText = result.lengthInFeet.toFixed(2) + ' 英呎';
+                    } else {
+                        lengthText = (result.lengthInFeet * 12).toFixed(1) + ' 英吋';
+                    }
+                    unitText = '英呎';
+                }
+
+                this.elements.resultLength.textContent = lengthText;
+                this.elements.resultFormula.textContent = 
+                    `公式：${result.formula} = ${result.length.toFixed(3)} ${unitText}`;
+                this.elements.resultWavelength.textContent = 
+                    result.wavelength.toFixed(3) + ' 公尺';
+            },
+
+            clearResult: function() {
+                this.elements.resultContainer.classList.add('hidden');
+                this.elements.resultEmpty.classList.remove('hidden');
+            },
+
+            renderHistory: function() {
+                const history = HistoryManager.load();
+                const list = this.elements.historyList;
+
+                if (history.length === 0) {
+                    list.innerHTML = '<li class="empty-state">尚無計算記錄</li>';
+                    return;
+                }
+
+                list.innerHTML = history.map(item => {
+                    let lengthText;
+                    if (item.unit === 'metric') {
+                        lengthText = item.result.length >= 1 
+                            ? item.result.length.toFixed(2) + ' 公尺' 
+                            : (item.result.length * 100).toFixed(1) + ' 公分';
+                    } else {
+                        lengthText = item.result.lengthInFeet >= 1 
+                            ? item.result.lengthInFeet.toFixed(2) + ' 英呎' 
+                            : (item.result.lengthInFeet * 12).toFixed(1) + ' 英吋';
+                    }
+
+                    const date = new Date(item.timestamp);
+                    const timeStr = date.toLocaleString('zh-TW', { 
+                        year: 'numeric', 
+                        month: '2-digit', 
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+
+                    return `
+                        <li class="history-item">
+                            <div class="history-frequency">${item.frequency} MHz</div>
+                            <div class="history-result">
+                                ${item.result.antennaTypeName} → ${lengthText}
+                            </div>
+                            <div class="history-meta">
+                                VF: ${item.velocityFactor} · ${timeStr}
+                            </div>
+                        </li>
+                    `;
+                }).join('');
+            },
+
+            showError: function(fieldId, message) {
+                const input = document.getElementById(fieldId);
+                const error = document.getElementById(fieldId + '-error');
+                if (input) input.classList.add('error');
+                if (error) {
+                    error.textContent = message;
+                    error.classList.add('show');
+                }
+            },
+
+            clearError: function(fieldId) {
+                const input = document.getElementById(fieldId);
+                const error = document.getElementById(fieldId + '-error');
+                if (input) input.classList.remove('error');
+                if (error) error.classList.remove('show');
+            },
+
+            clearAllErrors: function() {
+                this.clearError('antenna-type');
+                this.clearError('frequency');
+                this.clearError('velocity-factor');
+            }
+        };
+
+        // ============================================
+        // 初始化
+        // ============================================
+        document.addEventListener('DOMContentLoaded', function() {
+            UIController.init();
+        });
+    </script>
+</body>
+</html>
