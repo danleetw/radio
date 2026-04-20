@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>無線電發射源定位系統</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* Header */
+#hdr{background:#161b22;padding:8px 16px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:14px;flex-shrink:0}
+#hdr h1{font-size:14px;color:#58a6ff;letter-spacing:.4px;white-space:nowrap}
+.hf{display:flex;align-items:center;gap:6px}
+.hf label{font-size:11px;color:#8b949e;white-space:nowrap}
+.hf input{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:4px 8px;border-radius:4px;font-size:13px;width:95px}
+.hf input:focus{outline:none;border-color:#58a6ff}
+.hdr-r{margin-left:auto;font-size:11px;color:#484f58}
+.hdr-r a{color:#8b949e;text-decoration:none}
+
+/* Main layout */
+#wrap{display:flex;flex:1;overflow:hidden;min-height:0}
+#map{flex:1}
+
+/* Sidebar */
+#side{width:330px;flex-shrink:0;background:#161b22;border-left:1px solid #30363d;display:flex;flex-direction:column;min-height:0}
+#side-hdr{padding:8px 12px;border-bottom:1px solid #30363d;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+#side-hdr h2{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
+#add-btn{background:#238636;color:#fff;border:none;padding:3px 11px;border-radius:4px;cursor:pointer;font-size:12px}
+#add-btn:hover{background:#2ea043}
+
+/* Station list — scrollable */
+#st-wrap{flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:5px;min-height:0}
+#hint{font-size:11px;color:#484f58;text-align:center;padding:16px 10px;line-height:1.8}
+
+/* Station cards */
+.sc{border-radius:5px;border:1px solid #30363d;background:#0d1117;transition:border-color .15s}
+.sc.valid  {border-color:#3fb950}
+.sc.outlier{border-color:#f85149}
+.sc.reincl {border-color:#388bfd}
+.sc.editing{border-color:#58a6ff}
+
+/* View mode head */
+.sc-view-head{display:flex;align-items:center;gap:6px;padding:7px 8px 4px}
+.sc-num{font-size:11px;color:#8b949e;font-weight:700;min-width:18px}
+.sc-badge{font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600}
+.b-ok   {background:#1a4731;color:#3fb950}
+.b-out  {background:#4d1a1a;color:#f85149}
+.b-reinc{background:#0d2149;color:#58a6ff}
+.b-pend {background:#21262d;color:#8b949e}
+.sc-view-info{flex:1;min-width:0}
+.sc-addr{font-size:12px;color:#c9d1d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc-sig {font-size:11px;color:#8b949e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc-btns{display:flex;gap:3px;flex-shrink:0}
+.icon-btn{background:none;border:1px solid #30363d;color:#8b949e;padding:2px 7px;border-radius:3px;cursor:pointer;font-size:12px;line-height:1.4}
+.icon-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.icon-btn.del:hover{border-color:#f85149;color:#f85149}
+.icon-btn.confirm{border-color:#238636;color:#3fb950}
+.icon-btn.confirm:hover{background:#1a4731}
+.res-line{font-size:10px;padding:0 8px 5px 26px}
+.res-line.ok {color:#3fb950}
+.res-line.out{color:#f85149}
+.res-line.ri {color:#58a6ff}
+
+/* Edit mode body */
+.sc-edit{padding:6px 8px 8px;display:flex;flex-direction:column;gap:5px}
+.ir{display:flex;align-items:center;gap:5px}
+.ir label{font-size:11px;color:#8b949e;white-space:nowrap;width:32px;flex-shrink:0}
+.ir input{flex:1;background:#161b22;border:1px solid #30363d;color:#c9d1d9;padding:4px 7px;border-radius:4px;font-size:12px;min-width:0}
+.ir input:focus{outline:none;border-color:#58a6ff}
+.ir input.inp-err{border-color:#f85149}
+.sigconv{font-size:11px;white-space:nowrap;min-width:80px;text-align:right}
+.sigconv.ok {color:#3fb950}
+.sigconv.bad{color:#f85149}
+.geo-txt{font-size:10px;padding-left:37px;min-height:13px;line-height:1.3}
+.geo-txt.ok {color:#58a6ff}
+.geo-txt.err{color:#f85149}
+.edit-footer{display:flex;justify-content:flex-end;gap:5px;padding-top:2px}
+.btn-sm{font-size:11px;padding:3px 10px;border-radius:3px;cursor:pointer;border:1px solid}
+.btn-confirm{background:#238636;border-color:#238636;color:#fff}
+.btn-confirm:hover{background:#2ea043}
+.btn-cancel {background:none;border-color:#30363d;color:#8b949e}
+.btn-cancel:hover{border-color:#f85149;color:#f85149}
+
+/* Result panel */
+#res-panel{padding:9px 12px;border-top:1px solid #30363d;flex-shrink:0}
+#res-panel h2{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px}
+.rrow{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px}
+.rl{color:#8b949e}.rv{color:#58a6ff;font-weight:600}
+#res-empty{font-size:12px;color:#484f58}
+
+#ftr{background:#161b22;padding:4px 16px;border-top:1px solid #30363d;font-size:11px;color:#484f58;text-align:center;flex-shrink:0}
+.spin{display:inline-block;width:9px;height:9px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <h1>📡 無線電發射源定位系統</h1>
+  <div class="hf">
+    <label>頻率</label>
+    <input type="text" id="freq-in" value="7.200" placeholder="7.200">
+    <span style="font-size:12px;color:#8b949e">MHz</span>
+  </div>
+  <div class="hdr-r">
+    S9=−73 dBm（HF）· 每S單位=6 dB ·
+    <a href="https://www.receiverbook.de/map" target="_blank">找站台 ↗</a>
+  </div>
+</div>
+
+<div id="wrap">
+  <div id="map"></div>
+  <div id="side">
+    <div id="side-hdr">
+      <h2>收聽站台記錄</h2>
+      <button id="add-btn" onclick="addStation()">＋ 新增站台</button>
+    </div>
+    <div id="st-wrap">
+      <div id="hint">新增至少 3 個站台並輸入地址與訊號強度<br>即可自動計算發射源位置<br><br>
+        訊號格式：S7 · S9+20 · −85（dBm）<br>
+        S1≈−121 · S5≈−97 · S9≈−73 · S9+20≈−53
+      </div>
+    </div>
+    <div id="res-panel">
+      <h2>定位結果</h2>
+      <div id="res-body"><span id="res-empty">尚未計算</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="ftr">地圖：OpenStreetMap · 地址：Nominatim · S9=−73 dBm（HF）· 僅供教育研究用途</div>
+
+<script>
+// ── Map ──────────────────────────────────────────────────────────────────────
+const map = L.map('map').setView([24, 121], 7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {attribution:'© OpenStreetMap', maxZoom:18}).addTo(map);
+
+const mkIcon = (color, sz=12) => L.divIcon({
+  html:`<div style="width:${sz}px;height:${sz}px;background:${color};border:2px solid #fff;border-radius:50%;box-shadow:0 0 5px ${color}88"></div>`,
+  iconSize:[sz,sz], iconAnchor:[sz/2,sz/2], className:''
+});
+
+// ── Constants & state ────────────────────────────────────────────────────────
+const OUTLIER_DB = 18;
+const S_DBM = {1:-121,2:-115,3:-109,4:-103,5:-97,6:-91,7:-85,8:-79,9:-73};
+
+let stations  = [];
+let nextId    = 1;
+let txLayers  = [];
+let stMarkers = {};
+let geoCache  = {};
+
+// ── S-meter / dBm parsing ────────────────────────────────────────────────────
+function parseSig(raw) {
+  if (!raw || !raw.trim()) return null;
+  const s = raw.trim().toUpperCase().replace(/\s+/g,'');
+  let m;
+  m = s.match(/^S?9\+(\d+(?:\.\d+)?)(?:DB(?:M)?)?$/);
+  if (m) return -73 + parseFloat(m[1]);
+  m = s.match(/^S?([1-9])$/);
+  if (m) return S_DBM[+m[1]];
+  m = s.match(/^([+-]?\d+(?:\.\d+)?)(?:DB(?:M)?)?$/);
+  if (m) { const v = parseFloat(m[1]); return v > 20 ? null : v; }
+  return null;
+}
+function sigLabel(raw) {
+  const dbm = parseSig(raw);
+  if (dbm === null) return {ok:false, text: raw ? '❌ 格式錯誤' : ''};
+  return {ok:true, dbm, text:`→ ${dbm} dBm`};
+}
+
+// ── Geocode ──────────────────────────────────────────────────────────────────
+async function geocode(addr) {
+  if (geoCache[addr]) return geoCache[addr];
+  const r = await fetch(
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1`,
+    {headers:{'Accept-Language':'zh-TW,zh;q=0.9'}}
+  );
+  const d = await r.json();
+  if (!d.length) throw new Error('找不到地址');
+  const res = {lat:parseFloat(d[0].lat), lon:parseFloat(d[0].lon)};
+  geoCache[addr] = res;
+  return res;
+}
+
+// ── Station management ───────────────────────────────────────────────────────
+function addStation() {
+  const s = {
+    id: nextId++,
+    // confirmed data
+    address:'', lat:null, lon:null, sigInput:'', dbm:null,
+    // edit buffer
+    _buf: {address:'', lat:null, lon:null, sigInput:'', dbm:null, geoStatus:''},
+    // state
+    confirmed: false, mode:'edit',
+    outlier:false, residual:null, _wasOutlier:false,
+    geocodeTid:null
+  };
+  stations.push(s);
+  document.getElementById('hint').style.display = 'none';
+  createCard(s);
+  // Focus address input after render
+  requestAnimationFrame(() => {
+    document.getElementById('addr-' + s.id)?.focus();
+    // Scroll to bottom so new card is visible
+    const w = document.getElementById('st-wrap');
+    w.scrollTop = w.scrollHeight;
+  });
+}
+
+function removeStation(id) {
+  const s = stations.find(x => x.id === id);
+  if (s) {
+    clearTimeout(s.geocodeTid);
+    if (stMarkers[id]) { stMarkers[id].remove(); delete stMarkers[id]; }
+  }
+  stations = stations.filter(x => x.id !== id);
+  document.getElementById('sc-' + id)?.remove();
+  if (!stations.length) document.getElementById('hint').style.display = '';
+  runCalc();
+}
+
+function startEdit(id) {
+  const s = stations.find(x => x.id === id);
+  if (!s) return;
+  // Copy confirmed data into buffer
+  s._buf = {address:s.address, lat:s.lat, lon:s.lon,
+            sigInput:s.sigInput, dbm:s.dbm,
+            geoStatus: s.lat ? `ok:${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}` : ''};
+  s.mode = 'edit';
+  setCardMode(s);
+  requestAnimationFrame(() => document.getElementById('addr-' + id)?.focus());
+}
+
+function confirmEdit(id) {
+  const s = stations.find(x => x.id === id);
+  if (!s) return;
+  const buf = s._buf;
+  if (!buf.lat || buf.dbm === null) {
+    // Highlight missing fields
+    if (!buf.lat) {
+      const geo = document.getElementById('geo-' + id);
+      if (geo && !buf.geoStatus) { geo.className='geo-txt err'; geo.textContent='❌ 請輸入有效地址'; }
+    }
+    if (buf.dbm === null && buf.sigInput) {
+      document.getElementById('sig-' + id)?.classList.add('inp-err');
+    }
+    return;
+  }
+  // Commit buffer → confirmed
+  s.address  = buf.address;
+  s.lat      = buf.lat;
+  s.lon      = buf.lon;
+  s.sigInput = buf.sigInput;
+  s.dbm      = buf.dbm;
+  s.confirmed = true;
+  s.mode = 'view';
+  updateStMarker(s);
+  setCardMode(s);
+  runCalc();
+}
+
+function cancelEdit(id) {
+  const s = stations.find(x => x.id === id);
+  if (!s) return;
+  if (!s.confirmed) {
+    removeStation(id);
+  } else {
+    // Restore geocode timer cleanup
+    clearTimeout(s.geocodeTid);
+    s.mode = 'view';
+    setCardMode(s);
+  }
+}
+
+// ── Edit buffer input handlers ───────────────────────────────────────────────
+function onAddrInput(id, val) {
+  const s = stations.find(x => x.id === id);
+  if (!s) return;
+  s._buf.address = val;
+  s._buf.lat = null; s._buf.lon = null;
+  clearTimeout(s.geocodeTid);
+  if (!val.trim()) {
+    s._buf.geoStatus = '';
+    updateGeoDisplay(id, '');
+    return;
+  }
+  s._buf.geoStatus = 'loading';
+  updateGeoDisplay(id, 'loading');
+  s.geocodeTid = setTimeout(async () => {
+    try {
+      const g = await geocode(val.trim());
+      s._buf.lat = g.lat; s._buf.lon = g.lon;
+      s._buf.geoStatus = `ok:${g.lat.toFixed(4)}, ${g.lon.toFixed(4)}`;
+      updateGeoDisplay(id, s._buf.geoStatus);
+    } catch(e) {
+      s._buf.geoStatus = 'err:' + e.message;
+      updateGeoDisplay(id, s._buf.geoStatus);
+    }
+  }, 900);
+}
+
+function onSigInput(id, val) {
+  const s = stations.find(x => x.id === id);
+  if (!s) return;
+  s._buf.sigInput = val;
+  s._buf.dbm = parseSig(val);
+  updateSigConvDisplay(id, val);
+}
+
+function onInputKeydown(id, e) {
+  if (e.key === 'Enter') { e.preventDefault(); confirmEdit(id); }
+  if (e.key === 'Escape') { e.preventDefault(); cancelEdit(id); }
+}
+
+// ── DOM helpers ──────────────────────────────────────────────────────────────
+function updateGeoDisplay(id, status) {
+  const el = document.getElementById('geo-' + id);
+  if (!el) return;
+  if (status === 'loading') {
+    el.className = 'geo-txt'; el.innerHTML = '<span class="spin"></span> 解析中…';
+  } else if (status.startsWith('ok:')) {
+    el.className = 'geo-txt ok'; el.textContent = '✓ ' + status.slice(3);
+  } else if (status.startsWith('err:')) {
+    el.className = 'geo-txt err'; el.textContent = '❌ ' + status.slice(4);
+  } else {
+    el.className = 'geo-txt'; el.innerHTML = '&nbsp;';
+  }
+}
+
+function updateSigConvDisplay(id, raw) {
+  const conv = document.getElementById('sigconv-' + id);
+  const inp  = document.getElementById('sig-' + id);
+  if (!conv) return;
+  const lbl = sigLabel(raw);
+  conv.className = 'sigconv ' + (lbl.ok ? 'ok' : raw ? 'bad' : '');
+  conv.textContent = lbl.text || '';
+  if (inp) inp.className = (raw && !lbl.ok) ? 'inp-err' : '';
+}
+
+// ── Card creation (once per station) ────────────────────────────────────────
+function createCard(s) {
+  const wrap = document.getElementById('st-wrap');
+  const el = document.createElement('div');
+  el.className = 'sc editing';
+  el.id = 'sc-' + s.id;
+
+  el.innerHTML = `
+    <div id="vhead-${s.id}" class="sc-view-head" style="display:none">
+      <span class="sc-num">#${s.id}</span>
+      <span id="badge-${s.id}" class="sc-badge b-pend">待輸入</span>
+      <div class="sc-view-info">
+        <div id="vaddr-${s.id}" class="sc-addr">—</div>
+        <div id="vsig-${s.id}"  class="sc-sig" >&nbsp;</div>
+      </div>
+      <div class="sc-btns">
+        <button class="icon-btn" id="edit-btn-${s.id}"  title="編輯">✏</button>
+        <button class="icon-btn del" id="del-btn-${s.id}" title="刪除">×</button>
+      </div>
+    </div>
+    <div id="resline-${s.id}" class="res-line" style="display:none">&nbsp;</div>
+
+    <div id="ehead-${s.id}" class="sc-view-head">
+      <span class="sc-num">#${s.id}</span>
+      <span style="font-size:11px;color:#58a6ff;flex:1">編輯中</span>
+      <div class="sc-btns">
+        <button class="icon-btn confirm" id="ok-btn-${s.id}" title="確認 (Enter)">✓ 確認</button>
+        <button class="icon-btn del"    id="cx-btn-${s.id}" title="取消 (Esc)">✗</button>
+      </div>
+    </div>
+    <div id="ebody-${s.id}" class="sc-edit">
+      <div class="ir">
+        <label>地址</label>
+        <input type="text" id="addr-${s.id}" placeholder="城市或地址" autocomplete="off">
+      </div>
+      <div id="geo-${s.id}" class="geo-txt">&nbsp;</div>
+      <div class="ir">
+        <label>訊號</label>
+        <input type="text" id="sig-${s.id}" placeholder="S7 或 −85">
+        <span id="sigconv-${s.id}" class="sigconv">&nbsp;</span>
+      </div>
+    </div>
+  `;
+
+  // Bind events once
+  el.querySelector(`#edit-btn-${s.id}`).addEventListener('click', () => startEdit(s.id));
+  el.querySelector(`#del-btn-${s.id}` ).addEventListener('click', () => removeStation(s.id));
+  el.querySelector(`#ok-btn-${s.id}`  ).addEventListener('click', () => confirmEdit(s.id));
+  el.querySelector(`#cx-btn-${s.id}`  ).addEventListener('click', () => cancelEdit(s.id));
+
+  const addrIn = el.querySelector(`#addr-${s.id}`);
+  const sigIn  = el.querySelector(`#sig-${s.id}`);
+  addrIn.addEventListener('input',   e => onAddrInput(s.id, e.target.value));
+  addrIn.addEventListener('keydown', e => onInputKeydown(s.id, e));
+  sigIn .addEventListener('input',   e => onSigInput(s.id, e.target.value));
+  sigIn .addEventListener('keydown', e => onInputKeydown(s.id, e));
+
+  wrap.appendChild(el);
+}
+
+// ── Switch card between view / edit mode ─────────────────────────────────────
+function setCardMode(s) {
+  const vhead = document.getElementById('vhead-' + s.id);
+  const ehead = document.getElementById('ehead-' + s.id);
+  const ebody = document.getElementById('ebody-' + s.id);
+  const el    = document.getElementById('sc-' + s.id);
+  if (!vhead) return;
+
+  if (s.mode === 'view') {
+    vhead.style.display = 'flex'; ehead.style.display = 'none'; ebody.style.display = 'none';
+    // Sync view text
+    document.getElementById('vaddr-' + s.id).textContent = s.address || '—';
+    const lbl = sigLabel(s.sigInput);
+    document.getElementById('vsig-' + s.id).textContent = lbl.ok ? `${s.sigInput}  ${lbl.text}` : s.sigInput || '—';
+  } else {
+    vhead.style.display = 'none'; ehead.style.display = 'flex'; ebody.style.display = 'flex';
+    // Restore buffer into inputs (without replacing elements)
+    const addrIn = document.getElementById('addr-' + s.id);
+    const sigIn  = document.getElementById('sig-' + s.id);
+    if (addrIn && addrIn.value !== s._buf.address) addrIn.value = s._buf.address;
+    if (sigIn  && sigIn.value  !== s._buf.sigInput) sigIn.value  = s._buf.sigInput;
+    updateGeoDisplay(s.id, s._buf.geoStatus);
+    updateSigConvDisplay(s.id, s._buf.sigInput);
+  }
+
+  el.className = 'sc' + (
+    s.mode === 'edit' ? ' editing' :
+    s.outlier         ? ' outlier' :
+    s.lat && s.dbm != null ? (s._wasOutlier ? ' reincl' : ' valid') :
+    ''
+  );
+}
+
+// ── Update view-mode dynamic parts ────────────────────────────────────────────
+function updateCardView(s) {
+  if (s.mode !== 'view') return;
+
+  // Badge
+  const badge = document.getElementById('badge-' + s.id);
+  if (badge) {
+    if (s.outlier)                                  { badge.className='sc-badge b-out';  badge.textContent='忽略'; }
+    else if (s.residual != null && s._wasOutlier)   { badge.className='sc-badge b-reinc';badge.textContent='已復原'; }
+    else if (s.residual != null && s.dbm != null)   { badge.className='sc-badge b-ok';   badge.textContent='有效'; }
+    else                                            { badge.className='sc-badge b-pend'; badge.textContent='待確認'; }
+  }
+
+  // Residual line
+  const rl = document.getElementById('resline-' + s.id);
+  if (rl) {
+    if (s.residual == null || s.dbm == null) { rl.style.display='none'; }
+    else if (s.outlier)  { rl.style.display=''; rl.className='res-line out'; rl.textContent=`偏差 ${s.residual.toFixed(1)} dB — 超出閾值，已忽略`; }
+    else if (s._wasOutlier){ rl.style.display=''; rl.className='res-line ri';  rl.textContent=`偏差 ${s.residual.toFixed(1)} dB — 已復原`; }
+    else                 { rl.style.display=''; rl.className='res-line ok'; rl.textContent=`偏差 ${s.residual.toFixed(1)} dB`; }
+  }
+
+  // Card border
+  const el = document.getElementById('sc-' + s.id);
+  if (el) el.className = 'sc' + (
+    s.outlier           ? ' outlier' :
+    s.dbm != null && s.lat ? (s._wasOutlier ? ' reincl' : ' valid') : ''
+  );
+}
+
+// ── Map station marker ────────────────────────────────────────────────────────
+function updateStMarker(s) {
+  if (stMarkers[s.id]) { stMarkers[s.id].remove(); }
+  if (!s.lat) return;
+  stMarkers[s.id] = L.marker([s.lat, s.lon], {icon: mkIcon('#58a6ff', 12)})
+    .bindTooltip(
+      `<b>站台 #${s.id}</b><br>${s.address}<br><span style="color:#8b949e">${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</span>`,
+      {direction:'top', offset:[0,-8]}
+    )
+    .addTo(map);
+}
+
+// ── Trilateration ─────────────────────────────────────────────────────────────
+function haversine(lat1, lon1, lat2, lon2) {
+  const R=6371, r=Math.PI/180;
+  const a = Math.sin((lat2-lat1)*r/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin((lon2-lon1)*r/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+function trilaterate(pts, freq) {
+  if (pts.length < 3) return null;
+  const K = 20*Math.log10(freq) + 32.44;
+  let wS=0, latE=0, lonE=0;
+  for (const p of pts) { const w=Math.pow(10,p.dbm/20); wS+=w; latE+=p.lat*w; lonE+=p.lon*w; }
+  latE/=wS; lonE/=wS;
+  const str = pts.reduce((a,b) => a.dbm>b.dbm ? a : b);
+  let pEff = str.dbm + 20*Math.log10(Math.max(haversine(latE,lonE,str.lat,str.lon),0.1)) + K;
+  for (let i=0; i<2500; i++) {
+    let gLa=0, gLo=0, gP=0;
+    for (const p of pts) {
+      const d = Math.max(haversine(latE,lonE,p.lat,p.lon), 0.3);
+      const e = pEff - 20*Math.log10(d) - K - p.dbm;
+      const dD = -20/(d*Math.LN10), cl=Math.cos(latE*Math.PI/180);
+      gLa += e*dD*(latE-p.lat)*111/d;
+      gLo += e*dD*(lonE-p.lon)*111*cl/d;
+      gP  += e;
+    }
+    const n=pts.length;
+    latE -= 6e-4*gLa/n; lonE -= 6e-4*gLo/n; pEff -= 0.08*gP/n;
+  }
+  let eS=0;
+  for (const p of pts) {
+    const d=Math.max(haversine(latE,lonE,p.lat,p.lon),0.3);
+    eS += (pEff-20*Math.log10(d)-K-p.dbm)**2;
+  }
+  const rmse=Math.sqrt(eS/pts.length);
+  const dT=haversine(latE,lonE,str.lat,str.lon);
+  return {lat:latE, lon:lonE, pEff, rmse, errKm:Math.max(Math.round(dT*(Math.pow(10,rmse/20)-1)),3)};
+}
+
+function predDbm(res, lat, lon, freq) {
+  const K=20*Math.log10(freq)+32.44, d=Math.max(haversine(res.lat,res.lon,lat,lon),0.3);
+  return res.pEff - 20*Math.log10(d) - K;
+}
+
+// ── Outlier detection ─────────────────────────────────────────────────────────
+function detectOutliers(pts, freq) {
+  let work=[...pts], removed=new Set(), res=null, changed=true;
+  while (changed && work.length>=3) {
+    res=trilaterate(work, freq); if (!res) break;
+    changed=false;
+    const next=[];
+    for (const p of work) {
+      p.residual = Math.abs(predDbm(res,p.lat,p.lon,freq)-p.dbm);
+      if (p.residual>OUTLIER_DB && work.length-removed.size>3) { removed.add(p.id); changed=true; }
+      else next.push(p);
+    }
+    work=next;
+  }
+  if (work.length>=3) res=trilaterate(work,freq);
+  if (res) {
+    for (const p of pts.filter(x=>removed.has(x.id))) {
+      p.residual=Math.abs(predDbm(res,p.lat,p.lon,freq)-p.dbm);
+      if (p.residual<=OUTLIER_DB) removed.delete(p.id);
+    }
+    for (const p of pts.filter(x=>!removed.has(x.id)))
+      p.residual=Math.abs(predDbm(res,p.lat,p.lon,freq)-p.dbm);
+  }
+  return {res, removed, pts};
+}
+
+// ── Main calculation ──────────────────────────────────────────────────────────
+function runCalc() {
+  const freq  = parseFloat(document.getElementById('freq-in').value) || 7.2;
+  const valid = stations.filter(s => s.confirmed && s.lat && s.dbm != null);
+
+  if (valid.length < 3) {
+    clearTxLayers();
+    stations.forEach(s => { s.outlier=false; s.residual=null; s._wasOutlier=false; updateCardView(s); });
+    document.getElementById('res-body').innerHTML =
+      `<span id="res-empty">${valid.length ? `已有 ${valid.length} 個站台（需至少 3 個）` : '尚未計算'}</span>`;
+    return;
+  }
+
+  const pts = valid.map(s => ({id:s.id, lat:s.lat, lon:s.lon, dbm:s.dbm, residual:null}));
+  const {res, removed} = detectOutliers(pts, freq);
+  const resMap = Object.fromEntries(pts.map(p => [p.id, p.residual]));
+
+  stations.forEach(s => {
+    if (!s.confirmed || !s.lat || s.dbm==null) { s.outlier=false; s.residual=null; s._wasOutlier=false; }
+    else {
+      const wasOut=s.outlier;
+      s.outlier=removed.has(s.id);
+      s._wasOutlier=wasOut&&!s.outlier;
+      s.residual=resMap[s.id]??null;
+    }
+    updateCardView(s);
+  });
+
+  if (res) {
+    drawTX(res, freq);
+    const incl=valid.length-removed.size;
+    document.getElementById('res-body').innerHTML=`
+      <div class="rrow"><span class="rl">估算位置</span><span class="rv">${res.lat.toFixed(4)}, ${res.lon.toFixed(4)}</span></div>
+      <div class="rrow"><span class="rl">誤差範圍</span><span class="rv">±${res.errKm} km</span></div>
+      <div class="rrow"><span class="rl">RMSE</span><span class="rv">${res.rmse.toFixed(1)} dB</span></div>
+      <div class="rrow"><span class="rl">有效 / 忽略</span><span class="rv">${incl} / ${removed.size} 個站台</span></div>
+      <div class="rrow"><span class="rl">頻率</span><span class="rv">${freq} MHz</span></div>
+    `;
+    map.fitBounds(L.latLngBounds([[res.lat,res.lon],...valid.map(s=>[s.lat,s.lon])]).pad(0.2));
+  } else {
+    clearTxLayers();
+    document.getElementById('res-body').innerHTML=
+      `<span id="res-empty">排除離群值後站台不足（剩 ${valid.length-removed.size} 個）</span>`;
+  }
+}
+
+// ── Map TX ────────────────────────────────────────────────────────────────────
+function clearTxLayers() { txLayers.forEach(l=>l.remove()); txLayers=[]; }
+
+function drawTX(res, freq) {
+  clearTxLayers();
+  const K=20*Math.log10(freq)+32.44;
+  const dFromDbm=dbm=>Math.pow(10,(res.pEff-dbm-K)/20);
+  const add=l=>{txLayers.push(l);l.addTo(map);};
+  [{dbm:-60,c:'#f85149',fo:.05,lbl:'−60 dBm 強訊號'},
+   {dbm:-80,c:'#e3b341',fo:.05,lbl:'−80 dBm 中等'},
+   {dbm:-100,c:'#3fb950',fo:.04,lbl:'−100 dBm 弱訊號'}]
+  .forEach(({dbm,c,fo,lbl})=>{
+    const r=dFromDbm(dbm); if(r<1||r>8000) return;
+    add(L.circle([res.lat,res.lon],{radius:r*1000,color:c,fillColor:c,fillOpacity:fo,weight:1}).bindTooltip(lbl,{sticky:true}));
+  });
+  add(L.circle([res.lat,res.lon],{radius:res.errKm*1000,color:'#f85149',fillColor:'#f85149',fillOpacity:.07,weight:2,dashArray:'6 4'})
+    .bindTooltip(`誤差範圍 ±${res.errKm} km`, {direction:'top'}));
+  add(L.marker([res.lat,res.lon],{icon:mkIcon('#f85149',16)})
+    .bindTooltip(
+      `<b>📡 估算發射源</b><br>${res.lat.toFixed(5)}, ${res.lon.toFixed(5)}<br><span style="color:#f85149">誤差 ±${res.errKm} km</span>`,
+      {direction:'top', offset:[0,-10]}
+    ));
+}
+
+document.getElementById('freq-in').addEventListener('change', runCalc);
+
+// ── localStorage persistence ──────────────────────────────────────────────────
+const STORAGE_KEY = 'rdf_stations_v1';
+
+function saveToStorage() {
+  const data = {
+    freq: document.getElementById('freq-in').value,
+    nextId,
+    stations: stations
+      .filter(s => s.confirmed)
+      .map(s => ({id:s.id, address:s.address, lat:s.lat, lon:s.lon, sigInput:s.sigInput, dbm:s.dbm}))
+  };
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {}
+}
+
+function loadFromStorage() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch(e) {}
+  if (!data || !Array.isArray(data.stations) || !data.stations.length) return;
+
+  // Restore frequency
+  if (data.freq) document.getElementById('freq-in').value = data.freq;
+
+  // Restore nextId
+  if (data.nextId) nextId = data.nextId;
+
+  document.getElementById('hint').style.display = 'none';
+
+  for (const saved of data.stations) {
+    const s = {
+      id: saved.id,
+      address: saved.address, lat: saved.lat, lon: saved.lon,
+      sigInput: saved.sigInput, dbm: saved.dbm,
+      _buf: {address:saved.address, lat:saved.lat, lon:saved.lon,
+             sigInput:saved.sigInput, dbm:saved.dbm,
+             geoStatus: `ok:${saved.lat.toFixed(4)}, ${saved.lon.toFixed(4)}`},
+      confirmed: true, mode: 'view',
+      outlier:false, residual:null, _wasOutlier:false, geocodeTid:null
+    };
+    stations.push(s);
+    createCard(s);
+    setCardMode(s);
+    updateStMarker(s);
+  }
+
+  runCalc();
+}
+
+// Hook save into confirm and remove
+const _origConfirm = confirmEdit;
+confirmEdit = function(id) { _origConfirm(id); saveToStorage(); };
+const _origRemove = removeStation;
+removeStation = function(id) { _origRemove(id); saveToStorage(); };
+
+// Load on startup
+loadFromStorage();
+</script>
+</body>
+</html>
