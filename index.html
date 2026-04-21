@@ -121,10 +121,17 @@ body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;height:1
     <input type="text" id="freq-in" value="7.200" placeholder="7.200">
     <span style="font-size:12px;color:#8b949e">MHz</span>
   </div>
+  <div class="hf" id="terrain-wrap">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none">
+      <input type="checkbox" id="terrain-toggle" checked>
+      <span style="font-size:11px;color:#8b949e">⛰ 地形修正</span>
+    </label>
+  </div>
   <div class="hdr-r">
     S9=−73 dBm（HF）· 每S單位=6 dB ·
     <a href="https://www.receiverbook.de/map" target="_blank">找站台 ↗</a>
   </div>
+  <span style="font-size:10px;color:#484f58;margin-left:auto;white-space:nowrap">V26.0421.1</span>
 </div>
 
 <div id="wrap">
@@ -702,18 +709,22 @@ async function runCalc() {
     <div class="rrow"><span class="rl" style="color:#3fb950">⛰ 取得地形資料…</span><span class="rv"><span class="spin"></span></span></div>
   `;
 
-  // Step 2: Terrain correction
+  // Step 2: Terrain correction (if enabled)
   let corrPts = null, terrainNote = '';
-  try {
-    const losses = await getTerrainLosses(initRes.lat, initRes.lon, valid, freq);
-    if (gen !== _calcGen) return;
-    const avg = losses.reduce((a, b) => a + b, 0) / losses.length;
-    // adjusted dbm = measured + terrain_loss → equivalent free-space signal
-    corrPts = valid.map((s, i) => ({id:s.id, lat:s.lat, lon:s.lon, dbm:s.dbm + losses[i], residual:null}));
-    terrainNote = `⛰ 刀刃繞射修正 (均 +${avg.toFixed(1)} dB)`;
-  } catch(e) {
-    if (gen !== _calcGen) return;
-    terrainNote = '⛰ 地形資料取得失敗，使用 FSPL';
+  const useTerrain = document.getElementById('terrain-toggle').checked;
+  if (useTerrain) {
+    try {
+      const losses = await getTerrainLosses(initRes.lat, initRes.lon, valid, freq);
+      if (gen !== _calcGen) return;
+      const avg = losses.reduce((a, b) => a + b, 0) / losses.length;
+      corrPts = valid.map((s, i) => ({id:s.id, lat:s.lat, lon:s.lon, dbm:s.dbm + losses[i], residual:null}));
+      terrainNote = `⛰ 刀刃繞射修正 (均 +${avg.toFixed(1)} dB)`;
+    } catch(e) {
+      if (gen !== _calcGen) return;
+      terrainNote = `⛰ 地形資料取得失敗 (${e.message})，使用 FSPL`;
+    }
+  } else {
+    terrainNote = '— FSPL 模式（地形修正已關閉）';
   }
 
   // Step 3: Final trilateration with terrain-corrected values
@@ -776,6 +787,10 @@ function drawTX(res, freq) {
 }
 
 document.getElementById('freq-in').addEventListener('change', runCalc);
+document.getElementById('terrain-toggle').addEventListener('change', function() {
+  try { localStorage.setItem('rdf_terrain', this.checked ? '1' : '0'); } catch(e) {}
+  runCalc();
+});
 
 // ── localStorage persistence ──────────────────────────────────────────────────
 const STORAGE_KEY = 'rdf_stations_v1';
@@ -829,6 +844,12 @@ const _origConfirm = confirmEdit;
 confirmEdit = function(id) { _origConfirm(id); saveToStorage(); };
 const _origRemove = removeStation;
 removeStation = function(id) { _origRemove(id); saveToStorage(); };
+
+// Restore terrain toggle preference
+try {
+  const t = localStorage.getItem('rdf_terrain');
+  if (t === '0') document.getElementById('terrain-toggle').checked = false;
+} catch(e) {}
 
 // Load on startup
 loadFromStorage();
