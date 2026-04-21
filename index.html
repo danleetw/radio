@@ -582,21 +582,43 @@ async function fetchElevationsBatch(pts) {
     return true;
   });
   if (!need.length) return;
-  const locs = need.map(p => `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join('|');
-  const ctrl = new AbortController();
-  const tid = setTimeout(() => ctrl.abort(), 9000);
-  try {
-    const r = await fetch(`https://api.opentopodata.org/v1/srtm90m?locations=${locs}`, {signal: ctrl.signal});
-    clearTimeout(tid);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const d = await r.json();
-    if (d.status !== 'OK') throw new Error(d.error || d.status);
-    d.results.forEach((res, i) => {
-      const elev = res.elevation ?? 0;
-      need[i].elev = elev;
-      ELEV_CACHE[`${need[i].lat.toFixed(3)},${need[i].lon.toFixed(3)}`] = elev;
-    });
-  } catch(e) { clearTimeout(tid); throw e; }
+
+  // Try OpenTopoData (POST) then Open-Elevation as fallback
+  const APIS = [
+    {
+      url: 'https://api.opentopodata.org/v1/srtm90m',
+      body: () => JSON.stringify({ locations: need.map(p=>`${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join('|') }),
+      parse: d => d.results.map(r => r.elevation ?? 0)
+    },
+    {
+      url: 'https://api.open-elevation.com/api/v1/lookup',
+      body: () => JSON.stringify({ locations: need.map(p=>({latitude:p.lat, longitude:p.lon})) }),
+      parse: d => d.results.map(r => r.elevation ?? 0)
+    }
+  ];
+
+  let lastErr;
+  for (const api of APIS) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const r = await fetch(api.url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: api.body(),
+        signal: ctrl.signal
+      });
+      clearTimeout(tid);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      api.parse(d).forEach((elev, i) => {
+        need[i].elev = elev;
+        ELEV_CACHE[`${need[i].lat.toFixed(3)},${need[i].lon.toFixed(3)}`] = elev;
+      });
+      return;
+    } catch(e) { clearTimeout(tid); lastErr = e; }
+  }
+  throw lastErr;
 }
 
 function jNu(nu) {
