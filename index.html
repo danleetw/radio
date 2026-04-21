@@ -562,8 +562,93 @@ function detectOutliers(pts, freq) {
   return {res, removed, pts};
 }
 
+// ── Terrain: Knife-edge diffraction (ITU-R P.526) ────────────────────────────
+const ELEV_CACHE = {};
+let _calcGen = 0;
+
+function interpolatePath(lat1, lon1, lat2, lon2, nInter) {
+  const pts = [];
+  for (let i = 0; i <= nInter + 1; i++) {
+    const t = i / (nInter + 1);
+    pts.push({ lat: lat1 + (lat2 - lat1) * t, lon: lon1 + (lon2 - lon1) * t });
+  }
+  return pts;
+}
+
+async function fetchElevationsBatch(pts) {
+  const need = pts.filter(p => {
+    const k = `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
+    if (ELEV_CACHE[k] !== undefined) { p.elev = ELEV_CACHE[k]; return false; }
+    return true;
+  });
+  if (!need.length) return;
+  const locs = need.map(p => `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join('|');
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 9000);
+  try {
+    const r = await fetch(`https://api.opentopodata.org/v1/srtm90m?locations=${locs}`, {signal: ctrl.signal});
+    clearTimeout(tid);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (d.status !== 'OK') throw new Error(d.error || d.status);
+    d.results.forEach((res, i) => {
+      const elev = res.elevation ?? 0;
+      need[i].elev = elev;
+      ELEV_CACHE[`${need[i].lat.toFixed(3)},${need[i].lon.toFixed(3)}`] = elev;
+    });
+  } catch(e) { clearTimeout(tid); throw e; }
+}
+
+function jNu(nu) {
+  if (nu < -0.7) return 0;
+  if (nu <= 2.4) return Math.max(0, 6.02 + 9.11 * nu + 1.27 * nu * nu);
+  return 12.953 + 20 * Math.log10(nu);
+}
+
+function calcDiffractionLoss(elevPts, freqMhz) {
+  const n = elevPts.length;
+  if (n < 3) return 0;
+  const lambda = 300 / freqMhz; // wavelength in meters
+  const txE = elevPts[0].elev ?? 0, rxE = elevPts[n - 1].elev ?? 0;
+  const dists = [0];
+  for (let i = 1; i < n; i++)
+    dists.push(dists[i-1] + haversine(elevPts[i-1].lat, elevPts[i-1].lon, elevPts[i].lat, elevPts[i].lon) * 1000);
+  const D = dists[n - 1];
+  if (D < 500) return 0;
+  let maxNu = -Infinity;
+  for (let i = 1; i < n - 1; i++) {
+    const d1 = dists[i], d2 = D - d1;
+    const h = (elevPts[i].elev ?? 0) - (txE + (rxE - txE) * (d1 / D));
+    const nu = h * Math.sqrt(2 * (d1 + d2) / (lambda * d1 * d2));
+    if (nu > maxNu) maxNu = nu;
+  }
+  return jNu(maxNu);
+}
+
+async function getTerrainLosses(txLat, txLon, stns, freqMhz) {
+  const nInter = Math.min(10, Math.max(2, Math.floor((100 - 2 * stns.length) / stns.length)));
+  const allPts = [], ranges = [];
+  for (const s of stns) {
+    const pts = interpolatePath(s.lat, s.lon, txLat, txLon, nInter);
+    ranges.push({ start: allPts.length, end: allPts.length + pts.length });
+    allPts.push(...pts);
+  }
+  await fetchElevationsBatch(allPts);
+  return stns.map((_, i) => calcDiffractionLoss(allPts.slice(ranges[i].start, ranges[i].end), freqMhz));
+}
+
+function autoZoom(res) {
+  const dispKm = Math.max(res.errKm, 10);
+  const dLat = dispKm / 111;
+  const dLon = dispKm / (111 * Math.cos(res.lat * Math.PI / 180));
+  map.fitBounds(
+    L.latLngBounds([res.lat - dLat, res.lon - dLon], [res.lat + dLat, res.lon + dLon]).pad(1.0)
+  );
+}
+
 // ── Main calculation ──────────────────────────────────────────────────────────
-function runCalc() {
+async function runCalc() {
+  const gen = ++_calcGen;
   const freq  = parseFloat(document.getElementById('freq-in').value) || 7.2;
   const valid = stations.filter(s => s.confirmed && s.lat && s.dbm != null);
 
@@ -575,43 +660,72 @@ function runCalc() {
     return;
   }
 
+  // Step 1: FSPL trilateration
   const pts = valid.map(s => ({id:s.id, lat:s.lat, lon:s.lon, dbm:s.dbm, residual:null}));
-  const {res, removed} = detectOutliers(pts, freq);
-  const resMap = Object.fromEntries(pts.map(p => [p.id, p.residual]));
+  const {res: initRes, removed: initRemoved} = detectOutliers(pts, freq);
+
+  if (!initRes) {
+    clearTxLayers();
+    document.getElementById('res-body').innerHTML =
+      `<span id="res-empty">排除離群值後站台不足</span>`;
+    return;
+  }
+
+  // Show initial result and fetch terrain
+  drawTX(initRes, freq);
+  autoZoom(initRes);
+  document.getElementById('res-body').innerHTML = `
+    <div class="rrow"><span class="rl">估算位置</span><span class="rv">${initRes.lat.toFixed(4)}, ${initRes.lon.toFixed(4)}</span></div>
+    <div class="rrow"><span class="rl">誤差範圍</span><span class="rv">±${initRes.errKm} km</span></div>
+    <div class="rrow"><span class="rl" style="color:#3fb950">⛰ 取得地形資料…</span><span class="rv"><span class="spin"></span></span></div>
+  `;
+
+  // Step 2: Terrain correction
+  let corrPts = null, terrainNote = '';
+  try {
+    const losses = await getTerrainLosses(initRes.lat, initRes.lon, valid, freq);
+    if (gen !== _calcGen) return;
+    const avg = losses.reduce((a, b) => a + b, 0) / losses.length;
+    // adjusted dbm = measured + terrain_loss → equivalent free-space signal
+    corrPts = valid.map((s, i) => ({id:s.id, lat:s.lat, lon:s.lon, dbm:s.dbm + losses[i], residual:null}));
+    terrainNote = `⛰ 刀刃繞射修正 (均 +${avg.toFixed(1)} dB)`;
+  } catch(e) {
+    if (gen !== _calcGen) return;
+    terrainNote = '⛰ 地形資料取得失敗，使用 FSPL';
+  }
+
+  // Step 3: Final trilateration with terrain-corrected values
+  const finalPts = (corrPts ?? pts).map(p => ({...p, residual: null}));
+  const {res, removed} = detectOutliers(finalPts, freq);
+  const resMap = Object.fromEntries(finalPts.map(p => [p.id, p.residual]));
 
   stations.forEach(s => {
     if (!s.confirmed || !s.lat || s.dbm==null) { s.outlier=false; s.residual=null; s._wasOutlier=false; }
     else {
-      const wasOut=s.outlier;
-      s.outlier=removed.has(s.id);
-      s._wasOutlier=wasOut&&!s.outlier;
-      s.residual=resMap[s.id]??null;
+      const wasOut = s.outlier;
+      s.outlier = removed.has(s.id);
+      s._wasOutlier = wasOut && !s.outlier;
+      s.residual = resMap[s.id] ?? null;
     }
     updateCardView(s);
   });
 
   if (res) {
     drawTX(res, freq);
-    const incl=valid.length-removed.size;
-    document.getElementById('res-body').innerHTML=`
+    autoZoom(res);
+    const incl = valid.length - removed.size;
+    document.getElementById('res-body').innerHTML = `
       <div class="rrow"><span class="rl">估算位置</span><span class="rv">${res.lat.toFixed(4)}, ${res.lon.toFixed(4)}</span></div>
       <div class="rrow"><span class="rl">誤差範圍</span><span class="rv">±${res.errKm} km</span></div>
       <div class="rrow"><span class="rl">RMSE</span><span class="rv">${res.rmse.toFixed(1)} dB</span></div>
       <div class="rrow"><span class="rl">有效 / 忽略</span><span class="rv">${incl} / ${removed.size} 個站台</span></div>
       <div class="rrow"><span class="rl">頻率</span><span class="rv">${freq} MHz</span></div>
+      <div style="margin-top:4px;font-size:10px;color:#3fb950">${terrainNote}</div>
     `;
-    // 以誤差圓為基準縮放：圓直徑約佔地圖 1/2
-    const dispKm = Math.max(res.errKm, 10);
-    const dLat = dispKm / 111;
-    const dLon = dispKm / (111 * Math.cos(res.lat * Math.PI / 180));
-    map.fitBounds(
-      L.latLngBounds([res.lat - dLat, res.lon - dLon], [res.lat + dLat, res.lon + dLon])
-      .pad(1.0)
-    );
   } else {
     clearTxLayers();
-    document.getElementById('res-body').innerHTML=
-      `<span id="res-empty">排除離群值後站台不足（剩 ${valid.length-removed.size} 個）</span>`;
+    document.getElementById('res-body').innerHTML =
+      `<span id="res-empty">排除離群值後站台不足（剩 ${valid.length - removed.size} 個）</span>`;
   }
 }
 
