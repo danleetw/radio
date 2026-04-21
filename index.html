@@ -131,7 +131,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;height:1
     S9=−73 dBm（HF）· 每S單位=6 dB ·
     <a href="https://www.receiverbook.de/map" target="_blank">找站台 ↗</a>
   </div>
-  <span style="font-size:10px;color:#484f58;margin-left:auto;white-space:nowrap">V26.0421.2</span>
+  <span style="font-size:10px;color:#484f58;margin-left:auto;white-space:nowrap">V26.0421.3</span>
 </div>
 
 <div id="wrap">
@@ -570,7 +570,7 @@ function detectOutliers(pts, freq) {
 }
 
 // ── Terrain: Knife-edge diffraction (ITU-R P.526) ────────────────────────────
-const ELEV_CACHE = {};
+const ELEV_CACHE = {}, TILE_CACHE = {};
 let _calcGen = 0;
 
 function interpolatePath(lat1, lon1, lat2, lon2, nInter) {
@@ -582,6 +582,26 @@ function interpolatePath(lat1, lon1, lat2, lon2, nInter) {
   return pts;
 }
 
+// 從 AWS S3 Terrarium 磁貼取得高程（公開、無需 API Key、CORS 已啟用）
+async function _elevFromTile(lat, lon) {
+  const Z = 12, N = 1 << Z, latRad = lat * Math.PI / 180;
+  const tx  = Math.floor((lon + 180) / 360 * N);
+  const tyF = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * N;
+  const ty  = Math.floor(tyF);
+  const key = `${Z}/${tx}/${ty}`;
+  if (!TILE_CACHE[key]) {
+    const r = await fetch(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${key}.png`);
+    if (!r.ok) throw new Error(`tile HTTP ${r.status}`);
+    const cv = new OffscreenCanvas(256, 256), ctx = cv.getContext('2d');
+    ctx.drawImage(await createImageBitmap(await r.blob()), 0, 0);
+    TILE_CACHE[key] = ctx.getImageData(0, 0, 256, 256).data;
+  }
+  const px = Math.min(255, Math.max(0, Math.floor(((lon + 180) / 360 * N - tx) * 256)));
+  const py = Math.min(255, Math.max(0, Math.floor((tyF - ty) * 256)));
+  const d  = TILE_CACHE[key], i = (py * 256 + px) * 4;
+  return d[i] * 256 + d[i + 1] + d[i + 2] / 256 - 32768; // Terrarium decode
+}
+
 async function fetchElevationsBatch(pts) {
   const need = pts.filter(p => {
     const k = `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
@@ -589,41 +609,11 @@ async function fetchElevationsBatch(pts) {
     return true;
   });
   if (!need.length) return;
-
-  const store = elevs => elevs.forEach((elev, i) => {
-    need[i].elev = elev ?? 0;
-    ELEV_CACHE[`${need[i].lat.toFixed(3)},${need[i].lon.toFixed(3)}`] = need[i].elev;
+  const elevs = await Promise.all(need.map(p => _elevFromTile(p.lat, p.lon)));
+  elevs.forEach((e, i) => {
+    need[i].elev = e;
+    ELEV_CACHE[`${need[i].lat.toFixed(3)},${need[i].lon.toFixed(3)}`] = e;
   });
-
-  const tFetch = async (url, opts) => {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 15000);
-    try {
-      const r = await fetch(url, {...opts, signal: ctrl.signal});
-      clearTimeout(tid);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return await r.json();
-    } catch(e) {
-      clearTimeout(tid);
-      throw e.name === 'AbortError' ? new Error('連線逾時') : e;
-    }
-  };
-
-  // 1. OpenTopoData GET (documented primary method, CORS enabled)
-  try {
-    const locs = need.map(p=>`${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join('%7C');
-    const d = await tFetch(`https://api.opentopodata.org/v1/srtm90m?locations=${locs}`);
-    if (d.status === 'OK') { store(d.results.map(r => r.elevation)); return; }
-    throw new Error(d.error || d.status);
-  } catch(e1) {
-    // 2. Open-Elevation POST fallback
-    const d2 = await tFetch('https://api.open-elevation.com/api/v1/lookup', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({locations: need.map(p=>({latitude:p.lat,longitude:p.lon}))})
-    });
-    store(d2.results.map(r => r.elevation));
-  }
 }
 
 function jNu(nu) {
