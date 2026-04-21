@@ -122,8 +122,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;height:1
     <span style="font-size:12px;color:#8b949e">MHz</span>
   </div>
   <div class="hf" id="terrain-wrap">
-    <label style="display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none">
-      <input type="checkbox" id="terrain-toggle" checked>
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;white-space:nowrap">
+      <input type="checkbox" id="terrain-toggle" checked style="margin:0;cursor:pointer">
       <span style="font-size:11px;color:#8b949e">⛰ 地形修正</span>
     </label>
   </div>
@@ -131,7 +131,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;height:1
     S9=−73 dBm（HF）· 每S單位=6 dB ·
     <a href="https://www.receiverbook.de/map" target="_blank">找站台 ↗</a>
   </div>
-  <span style="font-size:10px;color:#484f58;margin-left:auto;white-space:nowrap">V26.0421.1</span>
+  <span style="font-size:10px;color:#484f58;margin-left:auto;white-space:nowrap">V26.0421.2</span>
 </div>
 
 <div id="wrap">
@@ -590,42 +590,40 @@ async function fetchElevationsBatch(pts) {
   });
   if (!need.length) return;
 
-  // Try OpenTopoData (POST) then Open-Elevation as fallback
-  const APIS = [
-    {
-      url: 'https://api.opentopodata.org/v1/srtm90m',
-      body: () => JSON.stringify({ locations: need.map(p=>`${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join('|') }),
-      parse: d => d.results.map(r => r.elevation ?? 0)
-    },
-    {
-      url: 'https://api.open-elevation.com/api/v1/lookup',
-      body: () => JSON.stringify({ locations: need.map(p=>({latitude:p.lat, longitude:p.lon})) }),
-      parse: d => d.results.map(r => r.elevation ?? 0)
-    }
-  ];
+  const store = elevs => elevs.forEach((elev, i) => {
+    need[i].elev = elev ?? 0;
+    ELEV_CACHE[`${need[i].lat.toFixed(3)},${need[i].lon.toFixed(3)}`] = need[i].elev;
+  });
 
-  let lastErr;
-  for (const api of APIS) {
+  const tFetch = async (url, opts) => {
     const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 10000);
+    const tid = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const r = await fetch(api.url, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: api.body(),
-        signal: ctrl.signal
-      });
+      const r = await fetch(url, {...opts, signal: ctrl.signal});
       clearTimeout(tid);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const d = await r.json();
-      api.parse(d).forEach((elev, i) => {
-        need[i].elev = elev;
-        ELEV_CACHE[`${need[i].lat.toFixed(3)},${need[i].lon.toFixed(3)}`] = elev;
-      });
-      return;
-    } catch(e) { clearTimeout(tid); lastErr = e; }
+      return await r.json();
+    } catch(e) {
+      clearTimeout(tid);
+      throw e.name === 'AbortError' ? new Error('連線逾時') : e;
+    }
+  };
+
+  // 1. OpenTopoData GET (documented primary method, CORS enabled)
+  try {
+    const locs = need.map(p=>`${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join('%7C');
+    const d = await tFetch(`https://api.opentopodata.org/v1/srtm90m?locations=${locs}`);
+    if (d.status === 'OK') { store(d.results.map(r => r.elevation)); return; }
+    throw new Error(d.error || d.status);
+  } catch(e1) {
+    // 2. Open-Elevation POST fallback
+    const d2 = await tFetch('https://api.open-elevation.com/api/v1/lookup', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({locations: need.map(p=>({latitude:p.lat,longitude:p.lon}))})
+    });
+    store(d2.results.map(r => r.elevation));
   }
-  throw lastErr;
 }
 
 function jNu(nu) {
