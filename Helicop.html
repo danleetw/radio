@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rescue Chopper 82</title>
+  <style>
+    :root {
+      --bg: #020602;
+      --phosphor: #3cff72;
+      --dim: #0e3817;
+      --glow: rgba(60, 255, 114, 0.28);
+      --danger: #8cffaa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top, rgba(18, 68, 26, 0.22), transparent 36%),
+        linear-gradient(180deg, #010201 0%, #020602 100%);
+      color: var(--phosphor);
+      font-family: "Courier New", monospace;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+
+    .frame {
+      width: min(100%, 980px);
+      padding: 16px;
+      border: 2px solid var(--phosphor);
+      background: rgba(2, 8, 2, 0.94);
+      box-shadow:
+        0 0 0 4px rgba(60, 255, 114, 0.08),
+        0 0 22px var(--glow),
+        inset 0 0 30px rgba(60, 255, 114, 0.08);
+    }
+
+    .hud {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      font-size: 14px;
+      text-shadow: 0 0 8px var(--glow);
+    }
+
+    canvas {
+      width: 100%;
+      display: block;
+      image-rendering: pixelated;
+      border: 2px solid var(--phosphor);
+      background: #000;
+      box-shadow: inset 0 0 28px rgba(60, 255, 114, 0.14);
+    }
+
+    .help {
+      margin-top: 10px;
+      color: #85ffac;
+      font-size: 13px;
+      line-height: 1.5;
+      text-shadow: 0 0 6px var(--glow);
+    }
+
+    .help strong {
+      color: #b0ffca;
+    }
+
+    .pixel-button {
+      border: 2px solid var(--phosphor);
+      background: #071607;
+      color: var(--phosphor);
+      padding: 10px 14px;
+      font: inherit;
+      text-transform: uppercase;
+      box-shadow: 0 0 12px var(--glow), inset 0 0 10px rgba(60, 255, 114, 0.08);
+      cursor: pointer;
+    }
+
+    .pixel-button:active {
+      transform: translateY(1px);
+    }
+
+    .mobile-note {
+      font-size: 12px;
+      color: #9cffbc;
+    }
+
+    .mobile-ui {
+      display: flex;
+      justify-content: flex-start;
+      align-items: flex-end;
+      gap: 16px;
+      margin-top: 14px;
+      flex-wrap: nowrap;
+    }
+
+    .pad {
+      display: grid;
+      grid-template-columns: 64px 64px 64px 64px;
+      grid-template-rows: 64px 64px 64px;
+      gap: 8px;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .pad .pixel-button {
+      width: 64px;
+      height: 64px;
+      padding: 0;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .pad-spacer {
+      width: 64px;
+      height: 64px;
+    }
+
+    .fire-button {
+      width: 64px;
+      height: 64px;
+      padding: 0;
+      font-size: 16px;
+    }
+
+    @media (max-width: 720px) {
+      .hud {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .mobile-ui {
+        align-items: center;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="hud">
+      <div id="stats">RESCUED 0 / 0</div>
+      <div id="status">MISSION ACTIVE</div>
+      <div id="ammo">AMMO ONLINE</div>
+    </div>
+    <canvas id="game" width="960" height="540"></canvas>
+    <div class="help">
+      <strong>操作：</strong>電腦用方向鍵移動、<strong>空白鍵</strong>射擊、<strong>R</strong> 重新開始。<br>
+      手機可直接使用畫面上的 <strong>上下左右</strong> 與 <strong>FIRE</strong> 按鈕。<br>
+      降落在人質建築附近可讓人質跑出來，帶回最左側基地平台完成救援。
+    </div>
+    <div class="mobile-ui">
+      <div class="pad" aria-label="行動方向控制">
+        <div class="pad-spacer"></div>
+        <button id="upBtn" class="pixel-button" type="button" aria-label="上">▲</button>
+        <div class="pad-spacer"></div>
+        <div class="pad-spacer"></div>
+        <button id="leftBtn" class="pixel-button" type="button" aria-label="左">◀</button>
+        <div class="pad-spacer"></div>
+        <button id="rightBtn" class="pixel-button" type="button" aria-label="右">▶</button>
+        <button id="fireBtn" class="pixel-button fire-button" type="button">FIRE</button>
+        <div class="pad-spacer"></div>
+        <button id="downBtn" class="pixel-button" type="button" aria-label="下">▼</button>
+        <div class="pad-spacer"></div>
+        <div class="mobile-note" id="mobileStatus">TOUCH READY</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const statsEl = document.getElementById("stats");
+    const statusEl = document.getElementById("status");
+    const upBtn = document.getElementById("upBtn");
+    const downBtn = document.getElementById("downBtn");
+    const leftBtn = document.getElementById("leftBtn");
+    const rightBtn = document.getElementById("rightBtn");
+    const fireBtn = document.getElementById("fireBtn");
+    const mobileStatusEl = document.getElementById("mobileStatus");
+
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+    const GROUND_Y = 448;
+    const WORLD_WIDTH = 3600;
+    const BASE_ZONE = { x: 100, width: 240 };
+    const keys = new Set();
+    let audioCtx = null;
+    const CIVILIAN_SCALE = 1.6;
+
+    const game = {
+      cameraX: 0,
+      time: 0,
+      over: false,
+      won: false,
+      rescueGoal: 0,
+      rescuedCount: 0,
+      soldiers: [],
+      missiles: [],
+      bullets: [],
+      civilians: [],
+      buildings: [],
+      stars: [],
+      explosions: [],
+      enemyTimer: 0,
+      soldierTimer: 0,
+      unloadTimer: 0,
+      helicopter: null
+    };
+
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtor) {
+          return null;
+        }
+        audioCtx = new AudioCtor();
+      }
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function playTone(type, frequency, duration, volume, sweep = 0) {
+      const audio = getAudioContext();
+      if (!audio) {
+        return;
+      }
+
+      const now = audio.currentTime;
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+
+      osc.type = type;
+      osc.frequency.setValueAtTime(frequency, now);
+      if (sweep !== 0) {
+        osc.frequency.linearRampToValueAtTime(Math.max(20, frequency + sweep), now + duration);
+      }
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+      osc.connect(gain);
+      gain.connect(audio.destination);
+      osc.start(now);
+      osc.stop(now + duration);
+    }
+
+    function playNoise(duration, volume) {
+      const audio = getAudioContext();
+      if (!audio) {
+        return;
+      }
+
+      const buffer = audio.createBuffer(1, audio.sampleRate * duration, audio.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i += 1) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      }
+
+      const source = audio.createBufferSource();
+      const filter = audio.createBiquadFilter();
+      const gain = audio.createGain();
+      filter.type = "lowpass";
+      filter.frequency.value = 900;
+      gain.gain.value = volume;
+
+      source.buffer = buffer;
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(audio.destination);
+      source.start();
+    }
+
+    function soundShoot() {
+      playTone("square", 720, 0.08, 0.04, -260);
+    }
+
+    function soundExplosion() {
+      playNoise(0.22, 0.08);
+      playTone("sawtooth", 160, 0.25, 0.03, -120);
+    }
+
+    function soundRescue() {
+      playTone("square", 420, 0.08, 0.04, 120);
+      playTone("square", 620, 0.14, 0.035, 80);
+    }
+
+    function soundCrash() {
+      playNoise(0.4, 0.12);
+      playTone("triangle", 220, 0.4, 0.05, -180);
+    }
+
+    function rand(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function initStars() {
+      game.stars = Array.from({ length: 110 }, () => ({
+        x: Math.random() * WORLD_WIDTH,
+        y: Math.random() * 250,
+        size: Math.random() > 0.8 ? 2 : 1,
+        speed: rand(0.1, 0.45)
+      }));
+    }
+
+    function resetGame() {
+      game.cameraX = 0;
+      game.time = 0;
+      game.over = false;
+      game.won = false;
+      game.bullets = [];
+      game.soldiers = [];
+      game.missiles = [];
+      game.civilians = [];
+      game.buildings = [];
+      game.explosions = [];
+      game.enemyTimer = 1.5;
+      game.soldierTimer = 3.5;
+      game.unloadTimer = 0;
+
+      game.helicopter = {
+        x: 150,
+        y: 220,
+        vx: 0,
+        vy: 0,
+        width: 58,
+        height: 30,
+        facing: 1,
+        reload: 0,
+        landed: false,
+        onGround: false,
+        health: 10,
+        carrying: 0
+      };
+
+      const buildingData = [
+        { x: 760, width: 100, height: 92, people: 3 },
+        { x: 1320, width: 82, height: 126, people: 4 },
+        { x: 1860, width: 120, height: 104, people: 4 },
+        { x: 2430, width: 92, height: 82, people: 3 },
+        { x: 3020, width: 110, height: 112, people: 4 }
+      ];
+
+      for (const data of buildingData) {
+        game.buildings.push({
+          ...data,
+          opened: false,
+          roofY: GROUND_Y - data.height,
+          residentsLeft: data.people
+        });
+
+        for (let i = 0; i < data.people; i += 1) {
+          game.civilians.push({
+            x: data.x + data.width / 2 + (i - data.people / 2) * 8,
+            y: GROUND_Y - 14,
+            vx: 0,
+            state: "inside",
+            homeX: data.x + data.width / 2,
+            doorOffset: (i - (data.people - 1) / 2) * 20,
+            homeWidth: data.width,
+            baseX: BASE_ZONE.x + BASE_ZONE.width / 2,
+            stepPhase: Math.random() * Math.PI * 2
+          });
+        }
+      }
+
+      game.rescueGoal = game.civilians.length;
+      game.rescuedCount = 0;
+      initStars();
+      updateHud();
+    }
+
+    function updateHud() {
+      const onboard = game.civilians.filter((c) => c.state === "onboard").length;
+      statsEl.textContent = `RESCUED ${game.rescuedCount} / ${game.rescueGoal}  |  ONBOARD ${onboard}  |  HULL ${game.helicopter.health}`;
+      if (game.over) {
+        statusEl.textContent = game.won ? "MISSION COMPLETE" : "MISSION FAILED";
+      } else {
+        statusEl.textContent = "MISSION ACTIVE";
+      }
+    }
+
+    function spawnSoldier() {
+      const safeBuildings = game.buildings.filter((building) => !building.opened);
+      const source = safeBuildings.length > 0 ? safeBuildings : game.buildings;
+      const nearBuilding = source[Math.floor(Math.random() * source.length)];
+      game.soldiers.push({
+        x: nearBuilding.x + nearBuilding.width / 2 + rand(-64, 64),
+        y: GROUND_Y - 12,
+        width: 8,
+        height: 12,
+        dir: Math.random() > 0.5 ? 1 : -1,
+        fireCooldown: rand(0.6, 1.4)
+      });
+    }
+
+    function spawnMissile() {
+      const fromRight = Math.random() > 0.5;
+      let spawnX = clamp(game.cameraX + (fromRight ? WIDTH + 40 : -40), 50, WORLD_WIDTH - 50);
+      const protectedZones = game.buildings
+        .filter((building) => building.opened)
+        .map((building) => [building.x - 180, building.x + building.width + 180]);
+      for (const [left, right] of protectedZones) {
+        if (spawnX > left && spawnX < right) {
+          spawnX = fromRight ? right + 40 : left - 40;
+        }
+      }
+      spawnX = clamp(spawnX, 50, WORLD_WIDTH - 50);
+      const target = game.helicopter;
+      const dx = target.x - spawnX;
+      const dy = target.y - rand(50, 180);
+      const mag = Math.hypot(dx, dy) || 1;
+      game.missiles.push({
+        x: spawnX,
+        y: rand(70, 210),
+        vx: (dx / mag) * 160,
+        vy: (dy / mag) * 160,
+        width: 14,
+        height: 4
+      });
+    }
+
+    function fireBullet() {
+      const heli = game.helicopter;
+      if (heli.reload > 0 || game.over) {
+        return;
+      }
+
+      heli.reload = 0.18;
+      soundShoot();
+      game.bullets.push({
+        x: heli.x + heli.facing * 34,
+        y: heli.y + 2,
+        vx: heli.facing * 420 + heli.vx * 0.35,
+        vy: heli.vy * 0.15,
+        width: 6,
+        height: 2
+      });
+    }
+
+    function explode(x, y, amount = 10) {
+      for (let i = 0; i < amount; i += 1) {
+        game.explosions.push({
+          x,
+          y,
+          vx: rand(-90, 90),
+          vy: rand(-90, 90),
+          life: rand(0.25, 0.6)
+        });
+      }
+    }
+
+    function rectsOverlap(a, b) {
+      return (
+        a.x - a.width / 2 < b.x + b.width / 2 &&
+        a.x + a.width / 2 > b.x - b.width / 2 &&
+        a.y - a.height / 2 < b.y + b.height / 2 &&
+        a.y + a.height / 2 > b.y - b.height / 2
+      );
+    }
+
+    function updateHelicopter(dt) {
+      const heli = game.helicopter;
+      const rawThrustX = (keys.has("ArrowRight") ? 1 : 0) - (keys.has("ArrowLeft") ? 1 : 0);
+      const rawThrustY = (keys.has("ArrowDown") ? 1 : 0) - (keys.has("ArrowUp") ? 1 : 0);
+      const thrustX = heli.onGround ? 0 : rawThrustX;
+      const thrustY = heli.onGround ? Math.min(0, rawThrustY) : rawThrustY;
+
+      heli.vx += thrustX * 280 * dt;
+      heli.vy += thrustY * 250 * dt;
+      heli.vx *= 0.985;
+      heli.vy *= 0.985;
+      heli.vy += 45 * dt;
+
+      heli.vx = clamp(heli.vx, -180, 180);
+      heli.vy = clamp(heli.vy, -170, 170);
+
+      heli.x += heli.vx * dt;
+      heli.y += heli.vy * dt;
+      heli.x = clamp(heli.x, heli.width / 2, WORLD_WIDTH - heli.width / 2);
+      heli.y = clamp(heli.y, 46, GROUND_Y - heli.height / 2);
+
+      if (Math.abs(heli.vx) > 8) {
+        heli.facing = Math.sign(heli.vx);
+      }
+
+      heli.reload = Math.max(0, heli.reload - dt);
+
+      heli.landed = false;
+      heli.onGround = false;
+
+      const groundLevel = GROUND_Y - heli.height / 2;
+      if (heli.y >= groundLevel) {
+        heli.y = groundLevel;
+        heli.vy = Math.min(0, heli.vy * -0.15);
+        heli.landed = Math.abs(heli.vy) < 55;
+        heli.onGround = heli.landed;
+        if (heli.onGround) {
+          heli.vx = 0;
+        }
+        if (Math.abs(heli.vy) > 65) {
+          crashHelicopter();
+        }
+      }
+
+      for (const building of game.buildings) {
+        const left = building.x;
+        const right = building.x + building.width;
+        const roofY = building.roofY - heli.height / 2;
+        const horizontalOverlap = heli.x + heli.width / 2 > left && heli.x - heli.width / 2 < right;
+        if (!horizontalOverlap) {
+          continue;
+        }
+
+        const touchingRoof = heli.y >= roofY && heli.y <= roofY + 12 && heli.vy >= -20;
+        if (touchingRoof) {
+          heli.y = roofY;
+          heli.vy = Math.min(0, heli.vy * -0.1);
+          heli.landed = Math.abs(heli.vy) < 55;
+          heli.onGround = false;
+          continue;
+        }
+
+        if (
+          heli.y + heli.height / 2 > building.roofY + 6 &&
+          heli.y - heli.height / 2 < GROUND_Y
+        ) {
+          crashHelicopter();
+        }
+      }
+
+      game.cameraX = clamp(heli.x - WIDTH / 2, 0, WORLD_WIDTH - WIDTH);
+    }
+
+    function crashHelicopter() {
+      if (game.over) {
+        return;
+      }
+      game.helicopter.health = 0;
+      soundCrash();
+      explode(game.helicopter.x, game.helicopter.y, 24);
+      game.over = true;
+      game.won = false;
+      updateHud();
+    }
+
+    function updateBuildings() {
+      const heli = game.helicopter;
+      for (const building of game.buildings) {
+        const left = building.x - 200;
+        const right = building.x + building.width + 200;
+        const closeEnough = heli.x >= left && heli.x <= right;
+        building.opened = heli.onGround && closeEnough;
+      }
+    }
+
+    function updateCivilians(dt) {
+      const heli = game.helicopter;
+      const inBase = heli.landed && heli.x > BASE_ZONE.x && heli.x < BASE_ZONE.x + BASE_ZONE.width;
+
+      for (const civ of game.civilians) {
+        if (civ.state === "inside") {
+          const home = game.buildings.find((b) => Math.abs(b.x + b.width / 2 - civ.homeX) < 2);
+          if (home && home.opened) {
+            civ.state = "running";
+            civ.x = home.x + home.width / 2 + civ.doorOffset;
+            home.residentsLeft = Math.max(0, home.residentsLeft - 1);
+          }
+        } else if (civ.state === "running") {
+          if (!heli.onGround) {
+            civ.state = "returning";
+            continue;
+          }
+          const targetX = heli.x;
+          const dx = targetX - civ.x;
+          civ.vx = clamp(dx * 1.54, -48, 48);
+          civ.x += civ.vx * dt;
+          civ.stepPhase += dt * 18;
+          civ.y = GROUND_Y - 14;
+
+          const closeToHeli = Math.abs(dx) < 26 && Math.abs(civ.y - heli.y) < 68;
+          if (closeToHeli) {
+            civ.state = "onboard";
+            civ.x = heli.x;
+            civ.y = heli.y;
+          }
+        } else if (civ.state === "returning") {
+          const returnX = civ.homeX + civ.doorOffset;
+          const dx = returnX - civ.x;
+          civ.vx = clamp(dx * 1.82, -46, 46);
+          civ.x += civ.vx * dt;
+          civ.stepPhase += dt * 16;
+          civ.y = GROUND_Y - 14;
+          if (Math.abs(dx) < 6) {
+            civ.state = "inside";
+            civ.x = returnX;
+            const home = game.buildings.find((b) => Math.abs(b.x + b.width / 2 - civ.homeX) < 2);
+            if (home) {
+              home.residentsLeft += 1;
+            }
+          }
+        } else if (civ.state === "onboard") {
+          civ.x = heli.x;
+          civ.y = heli.y;
+        } else if (civ.state === "disembarking") {
+          const dx = civ.targetX - civ.x;
+          civ.vx = clamp(dx * 1.96, -50, 50);
+          civ.x += civ.vx * dt;
+          civ.stepPhase += dt * 18;
+          civ.y = GROUND_Y - 14;
+          if (Math.abs(dx) < 6) {
+            civ.state = "rescued";
+            civ.x = civ.targetX;
+            civ.y = GROUND_Y - 14;
+          }
+        }
+      }
+
+      if (inBase) {
+        game.unloadTimer -= dt;
+        if (game.unloadTimer <= 0) {
+          const onboard = game.civilians.find((c) => c.state === "onboard");
+          if (onboard) {
+            onboard.state = "disembarking";
+            onboard.x = heli.x - heli.facing * 24;
+            onboard.y = GROUND_Y - 14;
+            onboard.targetX = BASE_ZONE.x + 60 + game.rescuedCount * 10;
+            game.rescuedCount += 1;
+            game.unloadTimer = 0.42;
+            soundRescue();
+            updateHud();
+          }
+        }
+      } else {
+        game.unloadTimer = 0;
+      }
+
+      if (game.rescuedCount >= game.rescueGoal && !game.over) {
+        const activeDisembark = game.civilians.some((c) => c.state === "disembarking" || c.state === "onboard");
+        if (!activeDisembark) {
+          game.over = true;
+          game.won = true;
+          updateHud();
+        }
+      }
+    }
+
+    function updateEnemies(dt) {
+      game.soldierTimer -= dt;
+      game.enemyTimer -= dt;
+
+      if (game.soldierTimer <= 0 && game.soldiers.length < 8) {
+        game.soldierTimer = rand(2.2, 4.8);
+        spawnSoldier();
+      }
+      if (game.enemyTimer <= 0 && game.missiles.length < 5) {
+        game.enemyTimer = rand(2.8, 5.5);
+        spawnMissile();
+      }
+
+      const heli = game.helicopter;
+
+      for (const soldier of game.soldiers) {
+        soldier.x += soldier.dir * 22 * dt;
+        if (Math.random() < 0.01) {
+          soldier.dir *= -1;
+        }
+        soldier.fireCooldown -= dt;
+        const nearRescueZone = game.buildings.some((building) =>
+          building.opened && soldier.x > building.x - 120 && soldier.x < building.x + building.width + 120
+        );
+        if (!nearRescueZone && soldier.fireCooldown <= 0 && Math.abs(soldier.x - heli.x) < 280) {
+          soldier.fireCooldown = rand(1.2, 2.2);
+          const dx = heli.x - soldier.x;
+          const mag = Math.abs(dx) || 1;
+          game.missiles.push({
+            x: soldier.x,
+            y: soldier.y - 4,
+            vx: (dx / mag) * 150,
+            vy: -30,
+            width: 12,
+            height: 3
+          });
+        }
+      }
+
+      for (const missile of game.missiles) {
+        const steer = Math.atan2(heli.y - missile.y, heli.x - missile.x);
+        missile.vx += Math.cos(steer) * 20 * dt;
+        missile.vy += Math.sin(steer) * 18 * dt;
+        missile.vx = clamp(missile.vx, -220, 220);
+        missile.vy = clamp(missile.vy, -220, 220);
+        missile.x += missile.vx * dt;
+        missile.y += missile.vy * dt;
+      }
+
+      game.soldiers = game.soldiers.filter((s) => s.x > 0 && s.x < WORLD_WIDTH);
+      game.missiles = game.missiles.filter((m) => m.x > -80 && m.x < WORLD_WIDTH + 80 && m.y > -40 && m.y < HEIGHT + 60);
+    }
+
+    function updateBullets(dt) {
+      for (const bullet of game.bullets) {
+        bullet.x += bullet.vx * dt;
+        bullet.y += bullet.vy * dt;
+      }
+      game.bullets = game.bullets.filter((b) => b.x > 0 && b.x < WORLD_WIDTH && b.y > 0 && b.y < HEIGHT);
+    }
+
+    function handleCollisions() {
+      const heli = game.helicopter;
+
+      for (const missile of [...game.missiles]) {
+        if (rectsOverlap(heli, missile)) {
+          explode(missile.x, missile.y, 14);
+          soundExplosion();
+          game.missiles.splice(game.missiles.indexOf(missile), 1);
+          heli.health -= 1;
+          if (heli.health <= 0) {
+            crashHelicopter();
+            return;
+          }
+          updateHud();
+        }
+      }
+
+      for (const soldier of [...game.soldiers]) {
+        for (const bullet of [...game.bullets]) {
+          if (rectsOverlap(soldier, bullet)) {
+            explode(soldier.x, soldier.y, 8);
+            soundExplosion();
+            game.soldiers.splice(game.soldiers.indexOf(soldier), 1);
+            game.bullets.splice(game.bullets.indexOf(bullet), 1);
+            break;
+          }
+        }
+      }
+
+      for (const missile of [...game.missiles]) {
+        for (const bullet of [...game.bullets]) {
+          if (rectsOverlap(missile, bullet)) {
+            explode(missile.x, missile.y, 10);
+            soundExplosion();
+            game.missiles.splice(game.missiles.indexOf(missile), 1);
+            game.bullets.splice(game.bullets.indexOf(bullet), 1);
+            break;
+          }
+        }
+      }
+    }
+
+    function updateExplosions(dt) {
+      for (const p of game.explosions) {
+        p.life -= dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+      }
+      game.explosions = game.explosions.filter((p) => p.life > 0);
+    }
+
+    function update(dt) {
+      if (game.over) {
+        updateExplosions(dt);
+        return;
+      }
+
+      game.time += dt;
+      updateHelicopter(dt);
+      updateBuildings();
+      updateCivilians(dt);
+      updateEnemies(dt);
+      updateBullets(dt);
+      handleCollisions();
+      updateExplosions(dt);
+      updateHud();
+    }
+
+    function drawBackground() {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      ctx.fillStyle = "#1dff63";
+      for (const star of game.stars) {
+        const x = (star.x - game.cameraX * star.speed + WORLD_WIDTH) % WORLD_WIDTH;
+        if (x < -4 || x > WIDTH + 4) {
+          continue;
+        }
+        ctx.globalAlpha = star.size === 2 ? 1 : 0.72;
+        ctx.fillRect(Math.floor(x), Math.floor(star.y), star.size, star.size);
+      }
+      ctx.globalAlpha = 1;
+
+      for (let i = 0; i < 8; i += 1) {
+        const ridgeX = -game.cameraX * (0.15 + i * 0.03) + i * 180;
+        ctx.strokeStyle = i % 2 === 0 ? "#0d3a14" : "#134a1d";
+        ctx.beginPath();
+        for (let x = -40; x <= WIDTH + 40; x += 24) {
+          const y = 320 + Math.sin((x + ridgeX) * 0.012) * (18 + i * 3) + i * 10;
+          if (x === -40) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+      }
+    }
+
+    function drawGround() {
+      ctx.fillStyle = "#041104";
+      ctx.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
+      ctx.strokeStyle = "#3cff72";
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y + 0.5);
+      ctx.lineTo(WIDTH, GROUND_Y + 0.5);
+      ctx.stroke();
+
+      const baseX = BASE_ZONE.x - game.cameraX;
+      ctx.fillStyle = "#0a210d";
+      ctx.fillRect(baseX, GROUND_Y - 8, BASE_ZONE.width, 8);
+      ctx.strokeRect(baseX, GROUND_Y - 8, BASE_ZONE.width, 8);
+
+      ctx.fillStyle = "#3cff72";
+      ctx.fillText("BASE", baseX + 14, GROUND_Y - 14);
+    }
+
+    function drawBuildings() {
+      for (const building of game.buildings) {
+        const x = Math.floor(building.x - game.cameraX);
+        const y = GROUND_Y - building.height;
+        ctx.fillStyle = "#071607";
+        ctx.fillRect(x, y, building.width, building.height);
+        ctx.strokeStyle = "#3cff72";
+        ctx.strokeRect(x, y, building.width, building.height);
+        ctx.fillRect(x - 6, y - 6, building.width + 12, 6);
+        ctx.strokeRect(x - 6, y - 6, building.width + 12, 6);
+
+        const doorX = x + Math.floor(building.width / 2) - 8;
+        ctx.clearRect(doorX, GROUND_Y - 18, 16, 18);
+        ctx.strokeRect(doorX, GROUND_Y - 18, 16, 18);
+
+        const windowCols = Math.max(2, Math.floor((building.width - 20) / 22));
+        const windowSlots = Math.max(building.people, windowCols * 2);
+        for (let i = 0; i < windowSlots; i += 1) {
+          const row = Math.floor(i / windowCols);
+          const col = i % windowCols;
+          const wx = x + 12 + col * 22;
+          const wy = y + 16 + row * 22;
+          ctx.strokeRect(wx, wy, 12, 14);
+        }
+
+        for (let i = 0; i < building.residentsLeft; i += 1) {
+          const row = Math.floor(i / windowCols);
+          const col = i % windowCols;
+          const wx = x + 12 + col * 22;
+          const wy = y + 16 + row * 22;
+          ctx.fillRect(wx + 4, wy + 4, 4, 7);
+          ctx.fillRect(wx + 5, wy + 1, 2, 2);
+        }
+
+        if (!building.opened) {
+          ctx.fillText("?", x + building.width / 2 - 3, y - 8);
+        }
+      }
+    }
+
+    function drawCivilians() {
+      for (const civ of game.civilians) {
+        if (civ.state === "inside" || civ.state === "onboard") {
+          continue;
+        }
+        const x = Math.floor(civ.x - game.cameraX);
+        const y = Math.floor(civ.y);
+        const legOffset = civ.state === "rescued" ? 0 : Math.round(Math.sin(civ.stepPhase || 0) * 2);
+        ctx.fillStyle = civ.state === "rescued" ? "#8cffaa" : "#3cff72";
+        ctx.fillRect(x - 3, y - 12, 6, 10);
+        ctx.fillRect(x - 2, y - 16, 4, 4);
+        ctx.fillRect(x - 3, y - 2, 2, 4 + legOffset);
+        ctx.fillRect(x + 1, y - 2, 2, 4 - legOffset);
+      }
+    }
+
+    function drawSoldiers() {
+      ctx.fillStyle = "#3cff72";
+      for (const soldier of game.soldiers) {
+        const x = Math.floor(soldier.x - game.cameraX);
+        const y = Math.floor(soldier.y);
+        ctx.fillRect(x - 2, y - 8, 4, 8);
+        ctx.fillRect(x + soldier.dir * 3, y - 6, 4, 2);
+      }
+    }
+
+    function drawMissiles() {
+      ctx.fillStyle = "#8cffaa";
+      for (const missile of game.missiles) {
+        const x = Math.floor(missile.x - game.cameraX);
+        const y = Math.floor(missile.y);
+        ctx.fillRect(x - missile.width / 2, y - missile.height / 2, missile.width, missile.height);
+      }
+    }
+
+    function drawBullets() {
+      ctx.fillStyle = "#d8ffe4";
+      for (const bullet of game.bullets) {
+        ctx.fillRect(Math.floor(bullet.x - game.cameraX), Math.floor(bullet.y), bullet.width, bullet.height);
+      }
+    }
+
+    function drawHelicopter() {
+      const heli = game.helicopter;
+      const x = Math.floor(heli.x - game.cameraX);
+      const y = Math.floor(heli.y);
+      const tilt = Math.round(heli.vx * 0.03);
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.strokeStyle = "#3cff72";
+      ctx.fillStyle = "#051705";
+
+      const dir = heli.facing;
+      const noseX = dir > 0 ? 26 : -26;
+      const tailX = -noseX;
+      const bodyFront = dir > 0 ? 20 : -20;
+      const bodyRear = -bodyFront;
+      const mastX = dir > 0 ? -6 : 6;
+      const tailBoomEnd = tailX - 16 * dir;
+      const skidFront = dir > 0 ? 20 : -20;
+      const skidRear = dir > 0 ? -24 : 24;
+
+      ctx.beginPath();
+      ctx.moveTo(bodyRear, -10 + tilt);
+      ctx.lineTo(bodyFront - 8 * dir, -10 + tilt);
+      ctx.lineTo(noseX, -2 + tilt);
+      ctx.lineTo(bodyFront - 8 * dir, 8 + tilt);
+      ctx.lineTo(bodyRear, 8 + tilt);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      const cockpitX = dir > 0 ? 6 : -18;
+      ctx.strokeRect(cockpitX, -5 + tilt, 14, 9);
+      ctx.beginPath();
+      ctx.moveTo(bodyRear, -4 + tilt);
+      ctx.lineTo(tailBoomEnd, -4 + tilt);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(mastX, -15 + tilt);
+      ctx.lineTo(mastX, -26 + tilt);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(skidRear, 10 + tilt);
+      ctx.lineTo(skidFront, 10 + tilt);
+      ctx.moveTo(skidRear + 6 * dir, 14 + tilt);
+      ctx.lineTo(skidFront - 4 * dir, 14 + tilt);
+      ctx.moveTo(tailBoomEnd, -8 + tilt);
+      ctx.lineTo(tailBoomEnd - 6 * dir, -12 + tilt);
+      ctx.moveTo(tailBoomEnd - 3 * dir, -14 + tilt);
+      ctx.lineTo(tailBoomEnd - 3 * dir, -4 + tilt);
+      ctx.stroke();
+
+      const rotor = Math.sin(game.time * 36) > 0 ? 38 : 24;
+      ctx.beginPath();
+      ctx.moveTo(mastX - rotor, -26 + tilt);
+      ctx.lineTo(mastX + rotor, -26 + tilt);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawExplosions() {
+      ctx.fillStyle = "#8cffaa";
+      for (const p of game.explosions) {
+        ctx.globalAlpha = Math.max(0, p.life * 1.8);
+        ctx.fillRect(Math.floor(p.x - game.cameraX), Math.floor(p.y), 2, 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawOverlay() {
+      ctx.strokeStyle = "rgba(60, 255, 114, 0.08)";
+      for (let y = 0; y < HEIGHT; y += 4) {
+        ctx.beginPath();
+        ctx.moveTo(0, y + 0.5);
+        ctx.lineTo(WIDTH, y + 0.5);
+        ctx.stroke();
+      }
+
+      if (!game.over) {
+        return;
+      }
+
+      ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      ctx.strokeStyle = "#3cff72";
+      ctx.strokeRect(240, 160, 480, 160);
+      ctx.fillStyle = "#3cff72";
+      ctx.font = "28px Courier New";
+      ctx.fillText(game.won ? "MISSION COMPLETE" : "MISSION FAILED", 320, 235);
+      ctx.font = "18px Courier New";
+      ctx.fillText(`RESCUED ${game.rescuedCount} OF ${game.rescueGoal}`, 350, 280);
+      ctx.fillText("PRESS R TO RESTART", 362, 320);
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      ctx.font = "16px Courier New";
+      drawBackground();
+      drawGround();
+      drawBuildings();
+      drawCivilians();
+      drawSoldiers();
+      drawMissiles();
+      drawBullets();
+      drawHelicopter();
+      drawExplosions();
+      drawOverlay();
+    }
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.033, (now - lastTime) / 1000);
+      lastTime = now;
+      update(dt);
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener("keydown", (event) => {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) {
+        event.preventDefault();
+      }
+      keys.add(event.code === "Space" ? "Space" : event.key);
+      if (event.code === "Space") {
+        fireBullet();
+      }
+      if ((event.key === "r" || event.key === "R") && game.over) {
+        resetGame();
+      }
+    });
+
+    window.addEventListener("keyup", (event) => {
+      keys.delete(event.code === "Space" ? "Space" : event.key);
+    });
+
+    function setGyroStatus(text) {
+      mobileStatusEl.textContent = text;
+    }
+
+    function bindTouchButton(button, keyName) {
+      const press = (event) => {
+        event.preventDefault();
+        getAudioContext();
+        keys.add(keyName);
+        setGyroStatus("TOUCH INPUT ACTIVE");
+      };
+      const release = (event) => {
+        event.preventDefault();
+        keys.delete(keyName);
+      };
+
+      button.addEventListener("touchstart", press, { passive: false });
+      button.addEventListener("touchend", release, { passive: false });
+      button.addEventListener("touchcancel", release, { passive: false });
+      button.addEventListener("mousedown", press);
+      button.addEventListener("mouseup", release);
+      button.addEventListener("mouseleave", release);
+    }
+
+    bindTouchButton(upBtn, "ArrowUp");
+    bindTouchButton(downBtn, "ArrowDown");
+    bindTouchButton(leftBtn, "ArrowLeft");
+    bindTouchButton(rightBtn, "ArrowRight");
+    fireBtn.addEventListener("touchstart", (event) => {
+      event.preventDefault();
+      getAudioContext();
+      fireBullet();
+    }, { passive: false });
+    fireBtn.addEventListener("mousedown", () => {
+      getAudioContext();
+      fireBullet();
+    });
+    fireBtn.addEventListener("click", fireBullet);
+
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
